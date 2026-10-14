@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dynamics 365 Invoice & Billing AI Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      --bg-page: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-subtle: #f8fafc;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --ai-bubble-bg: #f8fafc;
+      --ai-bubble-border: #e2e8f0;
+      --ai-bubble-text: #1e293b;
+      --user-bubble-bg: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      --user-bubble-text: #ffffff;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --accent-emerald: #10b981;
+      --chip-bg: #f1f5f9;
+      --chip-border: #e2e8f0;
+      --chip-text: #334155;
+    }
+
+    [data-theme="dark"] {
+      --bg-page: #090d16;
+      --bg-card: #151b2b;
+      --bg-subtle: #1e293b;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --ai-bubble-bg: #1e293b;
+      --ai-bubble-border: rgba(255, 255, 255, 0.08);
+      --ai-bubble-text: #e2e8f0;
+      --user-bubble-bg: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      --user-bubble-text: #ffffff;
+      --input-bg: #1e293b;
+      --input-border: rgba(255, 255, 255, 0.12);
+      --chip-bg: rgba(255, 255, 255, 0.06);
+      --chip-border: rgba(255, 255, 255, 0.08);
+      --chip-text: #cbd5e1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 0.82rem;
+      padding: 16px;
+    }
+
+    /* In Dynamics 365 iFrame mode */
+    body.in-iframe {
+      padding: 0 !important;
+      background: transparent !important;
+      height: 100vh !important;
+      width: 100% !important;
+      display: block !important;
+    }
+
+    body.in-iframe .widget-container {
+      max-width: 100% !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      border-radius: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Fixed Compact Size Widget Card */
+    .widget-container {
+      width: 100%;
+      max-width: 380px;
+      height: 590px;
+      max-height: 94vh;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Widget Header */
+    .widget-header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .widget-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .widget-logo {
+      width: 26px;
+      height: 26px;
+      background: var(--primary-gradient);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: white;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2);
+    }
+
+    .widget-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .widget-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 6px var(--accent-emerald);
+    }
+
+    .widget-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-btn {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.15s;
+    }
+
+    .icon-btn:hover {
+      color: var(--text-main);
+      border-color: var(--primary);
+    }
+
+    /* Context Banner */
+    .context-banner {
+      background: rgba(79, 70, 229, 0.08);
+      border-bottom: 1px solid var(--border-color);
+      padding: 6px 14px;
+      font-size: 0.74rem;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    /* Messages Area */
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message {
+      display: flex;
+      gap: 8px;
+      max-width: 88%;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .message.ai {
+      align-self: flex-start;
+    }
+
+    .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .avatar.user {
+      background: var(--user-bubble-bg);
+      color: white;
+    }
+
+    .avatar.ai {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--primary);
+    }
+
+    .bubble {
+      padding: 8px 12px;
+      border-radius: 10px;
+      line-height: 1.45;
+      font-size: 0.79rem;
+      word-break: break-word;
+    }
+
+    .message.user .bubble {
+      background: var(--user-bubble-bg);
+      color: var(--user-bubble-text);
+      border-bottom-right-radius: 2px;
+    }
+
+    .message.ai .bubble {
+      background: var(--ai-bubble-bg);
+      border: 1px solid var(--ai-bubble-border);
+      color: var(--ai-bubble-text);
+      border-bottom-left-radius: 2px;
+    }
+
+    .bubble p {
+      margin-bottom: 4px;
+    }
+
+    .bubble p:last-child {
+      margin-bottom: 0;
+    }
+
+    .bubble ul,
+    .bubble ol {
+      margin-left: 16px;
+      margin-bottom: 4px;
+    }
+
+    .bubble code {
+      background: rgba(0, 0, 0, 0.06);
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+
+    /* Action Cards in Chat */
+    .chat-card {
+      margin-top: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .chat-card-title {
+      font-weight: 700;
+      color: var(--text-main);
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .chat-card-btns {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .chat-card-btn {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      border: none;
+    }
+
+    .chat-card-btn.primary {
+      background: var(--primary-gradient);
+      color: #ffffff;
+    }
+
+    .chat-card-btn.secondary {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    /* Alert Boxes in Chat */
+    .chat-alert-error {
+      margin-top: 10px;
+      background: #fef2f2;
+      border: 1px solid #ef4444;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #991b1b;
+      font-size: 0.74rem;
+      line-height: 1.5;
+      box-shadow: 0 1px 4px rgba(239, 68, 68, 0.08);
+    }
+
+    .chat-alert-error .alert-title {
+      font-weight: 700;
+      color: #dc2626;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+    }
+
+    body.dark-theme .chat-alert-error {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #fca5a5;
+    }
+
+    body.dark-theme .chat-alert-error .alert-title {
+      color: #ef4444;
+    }
+
+    .chat-alert-success {
+      margin-top: 10px;
+      background: #f0fdf4;
+      border: 1px solid #22c55e;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #166534;
+      font-size: 0.74rem;
+      line-height: 1.5;
+      box-shadow: 0 1px 4px rgba(34, 197, 94, 0.08);
+    }
+
+    .chat-alert-success .alert-title {
+      font-weight: 700;
+      color: #16a34a;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+    }
+
+    body.dark-theme .chat-alert-success {
+      background: rgba(34, 197, 94, 0.12);
+      border-color: rgba(34, 197, 94, 0.5);
+      color: #86efac;
+    }
+
+    body.dark-theme .chat-alert-success .alert-title {
+      color: #22c55e;
+    }
+
+    /* Typing Indicator */
+    .typing-indicator {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      padding: 6px 10px;
+      background: var(--ai-bubble-bg);
+      border: 1px solid var(--ai-bubble-border);
+      border-radius: 8px;
+      width: fit-content;
+      margin-left: 32px;
+      margin-bottom: 8px;
+    }
+
+    .dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+
+    .dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes bounce {
+
+      0%,
+      80%,
+      100% {
+        transform: translateY(0);
+      }
+
+      40% {
+        transform: translateY(-4px);
+      }
+    }
+
+    /* Quick Chips */
+    .quick-chips {
+      padding: 8px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .chip {
+      padding: 5px 11px;
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      color: var(--chip-text);
+      border-radius: 16px;
+      font-size: 0.73rem;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .chip:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--bg-subtle);
+      transform: translateY(-1px);
+    }
+
+    /* Chat Input */
+    .chat-input-area {
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .chat-input-area input {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      color: var(--text-main);
+      font-size: 0.78rem;
+      outline: none;
+    }
+
+    .chat-input-area input:focus {
+      border-color: var(--primary);
+    }
+
+    .btn-send {
+      padding: 8px 14px;
+      background: var(--primary-gradient);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+
+    /* Modals */
+    .modal-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(2px);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+    }
+
+    .modal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 2px;
+    }
+
+    .modal-desc {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .modal-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .modal-field {
+      margin-bottom: 8px;
+    }
+
+    .modal-input {
+      width: 100%;
+      padding: 7px 10px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      font-size: 0.76rem;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .modal-btns {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .btn-submit {
+      flex: 1;
+      padding: 7px 12px;
+      background: var(--primary-gradient);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+
+    .btn-cancel {
+      padding: 7px 12px;
+      background: var(--bg-subtle);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Small Widget Container Card (Exact Same as Sales AI Agent) -->
+  <div class="widget-container">
+    <!-- Header -->
+    <div class="widget-header">
+      <div class="widget-brand">
+        <div class="widget-logo">📑</div>
+        <div class="widget-title">
+          <span>Invoice & Billing AI</span>
+          <span class="widget-status-dot" title="Live Dynamics 365 Connected"></span>
+        </div>
+      </div>
+      <div class="widget-actions">
+        <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle Light/Dark">☀️</button>
+        <button class="icon-btn" onclick="clearChat()" title="Reset Chat">🔄</button>
+      </div>
+    </div>
+
+    <!-- Context Banner for Current Record -->
+    <div class="context-banner" id="contextBanner">
+      <div>
+        <span>Context: </span><b id="contextRecordName">Active Quote</b> <span id="contextCustomer"></span>
+      </div>
+      <span style="font-size:0.68rem; opacity:0.8;" id="contextStatusBadge">Synced</span>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages-area" id="chatArea">
+      <div class="message ai">
+        <div class="avatar ai">AI</div>
+        <div class="bubble">
+          Hello! 📑 I am your Dynamics 365 <strong>Invoice AI Copilot</strong>.<br><br>
+          You can preview PDF invoices, email clients, audit GST compliance, or record payments using the actions below.
+        </div>
+      </div>
+    </div>
+
+    <div class="typing-indicator" id="typingIndicator">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+
+    <!-- Quick Action Chips (Dynamic based on Quote vs Invoice) -->
+    <div class="quick-chips" id="quickChips">
+      <!-- Generated via JS -->
+    </div>
+
+    <!-- Chat Input -->
+    <div class="chat-input-area">
+      <input type="text" id="userInput" placeholder="Ask Invoice & Billing AI..." onkeypress="handleKey(event)" />
+      <button class="btn-send" onclick="sendMessage()">Send</button>
+    </div>
+
+    <!-- Convert Modal -->
+    <div class="modal-overlay" id="convertModal">
+      <div class="modal-card">
+        <div class="modal-title">⚡ Convert Quote to Invoice</div>
+        <div class="modal-field">
+          <label class="modal-label">Customer Name</label>
+          <input type="text" id="convCustomerName" class="modal-input" placeholder="Customer Name *" />
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Billing Email</label>
+          <input type="email" id="convEmail" class="modal-input" placeholder="Billing Email *" />
+        </div>
+        <div style="display:flex; gap:8px;">
+          <div class="modal-field" style="flex:1;">
+            <label class="modal-label">Discount (%)</label>
+            <input type="number" id="convDiscount" class="modal-input" placeholder="e.g. 10" value="10" min="0"
+              max="100" />
+          </div>
+          <div class="modal-field" style="flex:1;">
+            <label class="modal-label">Payment Due Date</label>
+            <input type="date" id="convDueDate" class="modal-input" />
+          </div>
+        </div>
+        <div class="modal-btns">
+          <button class="btn-submit" onclick="submitConvertModal()">Convert Now</button>
+          <button class="btn-cancel" onclick="closeModal('convertModal')">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Modal -->
+    <div class="modal-overlay" id="emailModal">
+      <div class="modal-card">
+        <div class="modal-title">📧 Send Invoice PDF to Client</div>
+        <div class="modal-desc">Dispatches official PDF attachment via Email</div>
+        <div class="modal-field">
+          <label class="modal-label">Client Email</label>
+          <input type="email" id="emailRecipient" class="modal-input" placeholder="Client Email *" />
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Client Name</label>
+          <input type="text" id="emailRecipientName" class="modal-input" placeholder="Client Name" />
+        </div>
+        <div class="modal-btns">
+          <button class="btn-submit" onclick="submitEmailModal()">Send PDF</button>
+          <button class="btn-cancel" onclick="closeModal('emailModal')">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Context State
+    let activeEntity = 'invoice'; // Default to invoice
+    let activeRecordId = '';
+    let activeRecordName = 'Sales Invoice - Rina Patel';
+    let activeCustomer = 'Rina Patel';
+    let activeEmail = 'Rina@Webtual.com';
+    let activeAmount = '₹29,500';
+
+    const chatArea = document.getElementById('chatArea');
+    const userInput = document.getElementById('userInput');
+    const typingIndicator = document.getElementById('typingIndicator');
+    const quickChips = document.getElementById('quickChips');
+    const contextRecordName = document.getElementById('contextRecordName');
+    const contextCustomer = document.getElementById('contextCustomer');
+    const contextStatusBadge = document.getElementById('contextStatusBadge');
+
+    // Auto-detect Dynamics 365 parent context
+    function initDynamicsContext() {
+      // 1. Check URL parameters of the widget itself
+      const urlParams = new URLSearchParams(window.location.search);
+      let detectedId = urlParams.get('id') || urlParams.get('ID') || urlParams.get('quoteid') || urlParams.get('invoiceid') || urlParams.get('Id');
+      if (!detectedId && urlParams.get('data')) {
+        try {
+          const dataParams = new URLSearchParams(urlParams.get('data'));
+          detectedId = dataParams.get('id') || dataParams.get('ID') || dataParams.get('quoteid');
+        } catch (e) { }
+      }
+
+      // 2. Check document.referrer (Parent Dynamics 365 URL)
+      if (!detectedId && document.referrer) {
+        try {
+          const refUrl = new URL(document.referrer);
+          detectedId = refUrl.searchParams.get('id') || refUrl.searchParams.get('ID') || refUrl.searchParams.get('quoteid');
+          const refEtn = refUrl.searchParams.get('etn');
+          if (refEtn) activeEntity = refEtn.toLowerCase();
+        } catch (e) { }
+      }
+
+      // 3. Try window.parent.Xrm (if accessible)
+      if (window.self !== window.top) {
+        document.body.classList.add('in-iframe');
+
+        try {
+          if (window.parent && window.parent.Xrm && window.parent.Xrm.Page && window.parent.Xrm.Page.data) {
+            const entity = window.parent.Xrm.Page.data.entity;
+            const entityName = entity.getEntityName(); // 'quote' or 'invoice'
+            const id = entity.getId();
+
+            if (entityName) activeEntity = entityName.toLowerCase();
+            if (id) detectedId = id;
+
+            const nameAttr = entity.attributes.get('name');
+            if (nameAttr && nameAttr.getValue()) activeRecordName = nameAttr.getValue();
+
+            const custAttr = entity.attributes.get('customerid') || entity.attributes.get('potentialcustomerid');
+            if (custAttr && custAttr.getValue() && custAttr.getValue()[0]) {
+              activeCustomer = custAttr.getValue()[0].name;
+            }
+
+            const totalAttr = entity.attributes.get('totalamount');
+            if (totalAttr && totalAttr.getValue() !== null) {
+              activeAmount = '₹' + Number(totalAttr.getValue()).toLocaleString('en-IN');
+            }
+          }
+        } catch (e) {
+          console.warn('Xrm context notice:', e.message);
+        }
+      }
+
+      if (detectedId) {
+        activeRecordId = String(detectedId).replace(/[{}]/g, '').trim();
+      }
+
+      applyContext();
+    }
+
+    function applyContext() {
+      contextRecordName.textContent = activeRecordName || (activeEntity === 'quote' ? 'Active Quote' : 'Active Invoice');
+      contextCustomer.textContent = activeCustomer ? `(${activeCustomer})` : '';
+      contextStatusBadge.textContent = activeEntity === 'quote' ? 'Quote' : 'Invoice';
+
+      if (activeEntity === 'quote') {
+        quickChips.innerHTML = `
+          <div class="chip" onclick="openConvertModal()" style="font-weight: 600; background: var(--primary-gradient); color: #ffffff; border: none; padding: 6px 16px; box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3); border-radius: 20px; cursor: pointer;">⚡ Convert to Invoice</div>
+        `;
+      } else {
+        quickChips.innerHTML = `
+          <div class="chip" onclick="sendQuickPrompt('Preview PDF')">📄 Preview PDF</div>
+          <div class="chip" onclick="openEmailModal()">📧 Email Client</div>
+          <div class="chip" onclick="sendQuickPrompt('Mark as Paid')">✅ Mark Paid</div>
+          <div class="chip" onclick="sendQuickPrompt('Send payment reminder')">⏰ Remind Payment</div>
+          <div class="chip" onclick="sendQuickPrompt('Audit tax and GST compliance')">🔍 Tax Audit</div>
+        `;
+      }
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text) return;
+
+      appendMessage(text, 'user');
+      userInput.value = '';
+
+      typingIndicator.style.display = 'flex';
+      chatArea.scrollTop = chatArea.scrollHeight;
+
+      try {
+        const res = await fetch('/api/invoice-agent/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: 'inv_' + (activeRecordId || 'default'),
+            message: text,
+            context: {
+              entityName: activeEntity,
+              recordId: activeRecordId,
+              recordName: activeRecordName,
+              customerName: activeCustomer,
+              totalAmount: activeAmount,
+              email: activeEmail
+            }
+          })
+        });
+
+        const data = await res.json();
+        typingIndicator.style.display = 'none';
+
+        if (data.reply) {
+          appendMessage(data.reply, 'ai');
+        } else {
+          appendMessage('⚠️ Received no response from AI server.', 'ai');
+        }
+      } catch (err) {
+        typingIndicator.style.display = 'none';
+        appendMessage(`⚠️ Error communicating with server: ${err.message}`, 'ai');
+      }
+    }
+
+    function sendQuickPrompt(prompt) {
+      userInput.value = prompt;
+      sendMessage();
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter') sendMessage();
+    }
+
+    function appendMessage(text, sender) {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${sender}`;
+
+      const avatarDiv = document.createElement('div');
+      avatarDiv.className = `avatar ${sender}`;
+      avatarDiv.textContent = sender === 'user' ? 'ME' : 'AI';
+
+      const bubbleDiv = document.createElement('div');
+      bubbleDiv.className = 'bubble';
+
+      const actPrefix = '<' + '!--INVOICE_ACTION:';
+      const actSuffix = '--' + '>';
+      const actStart = text.indexOf(actPrefix);
+
+      if (actStart !== -1) {
+        const actEnd = text.indexOf(actSuffix, actStart);
+        if (actEnd !== -1) {
+          try {
+            const jsonStr = text.substring(actStart + actPrefix.length, actEnd);
+            const actionData = JSON.parse(jsonStr);
+            const cleanText = (text.substring(0, actStart) + text.substring(actEnd + actSuffix.length)).trim();
+
+            let cardHtml = '';
+            if (actionData.action === 'converted') {
+              cardHtml = `
+                <div class="chat-card">
+                  <div class="chat-card-title">
+                    <span>📑 Invoice #${actionData.invoiceNumber}</span>
+                    <span style="font-size:0.65rem; background:#10b981; color:#fff; padding:2px 6px; border-radius:10px;">ACTIVE</span>
+                  </div>
+                  <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:6px;">
+                    Amount: <b>₹${Number(actionData.grandTotal || 0).toLocaleString('en-IN')}</b> | Client: <b>${actionData.customerName}</b>
+                  </div>
+                  <div class="chat-card-btns">
+                    <a href="/api/invoice-agent/download-pdf/${actionData.invoiceNumber}" target="_blank" class="chat-card-btn primary">
+                      📥 View PDF
+                    </a>
+                    <button onclick="openEmailModal('${actionData.email}', '${actionData.customerName}')" class="chat-card-btn secondary">
+                      📧 Email Client
+                    </button>
+                  </div>
+                </div>
+              `;
+            } else if (actionData.action === 'preview') {
+              cardHtml = `
+                <div class="chat-card">
+                  <div class="chat-card-title">
+                    <span>📄 Tax Invoice #${actionData.invoiceNumber}</span>
+                    <span style="font-size:0.65rem; background:#6366f1; color:#fff; padding:2px 6px; border-radius:10px;">READY</span>
+                  </div>
+                  <div class="chat-card-btns">
+                    <a href="${actionData.downloadUrl}" target="_blank" class="chat-card-btn primary">
+                      📥 Download PDF
+                    </a>
+                    <button onclick="openEmailModal()" class="chat-card-btn secondary">
+                      📧 Email Client
+                    </button>
+                  </div>
+                </div>
+              `;
+            }
+
+            bubbleDiv.innerHTML = formatMarkdown(cleanText) + cardHtml;
+          } catch (e) {
+            bubbleDiv.innerHTML = formatMarkdown(text);
+          }
+        } else {
+          bubbleDiv.innerHTML = formatMarkdown(text);
+        }
+      } else {
+        bubbleDiv.innerHTML = formatMarkdown(text);
+      }
+
+      msgDiv.appendChild(avatarDiv);
+      msgDiv.appendChild(bubbleDiv);
+      chatArea.appendChild(msgDiv);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function formatMarkdown(text) {
+      if (!text) return '';
+      let escaped = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+      escaped = escaped.replace(/^\* (.*$)/gim, '• $1<br>');
+      escaped = escaped.replace(/\n\n/g, '<p></p>');
+      escaped = escaped.replace(/\n/g, '<br>');
+
+      // Parse styled alert boxes
+      escaped = escaped.replace(/:::alert-danger([\s\S]*?):::/g, function (match, content) {
+        return `<div class="chat-alert-error"><div class="alert-title">⚠️ Missing Email Address (Not Sent):</div><div>${content.trim()}</div></div>`;
+      });
+      escaped = escaped.replace(/:::alert-success([\s\S]*?):::/g, function (match, content) {
+        return `<div class="chat-alert-success"><div class="alert-title">✅ Reminders Sent Successfully:</div><div>${content.trim()}</div></div>`;
+      });
+
+      return escaped;
+    }
+
+    // Modal Functions
+    function openConvertModal() {
+      document.getElementById('convCustomerName').value = activeCustomer;
+      document.getElementById('convEmail').value = activeEmail;
+
+      // Auto-set Due Date to 7 days from today
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      document.getElementById('convDueDate').value = d.toISOString().split('T')[0];
+
+      document.getElementById('convertModal').style.display = 'flex';
+    }
+
+    function submitConvertModal() {
+      const name = document.getElementById('convCustomerName').value.trim() || activeCustomer;
+      const email = document.getElementById('convEmail').value.trim() || activeEmail;
+      const discount = document.getElementById('convDiscount').value || 10;
+      const dueDate = document.getElementById('convDueDate').value;
+      closeModal('convertModal');
+
+      sendQuickPrompt(`Convert this quote to tax invoice for ${name} (${email}) with ${discount}% discount due on ${dueDate}`);
+    }
+
+    function openEmailModal(defaultEmail, defaultName) {
+      document.getElementById('emailRecipient').value = defaultEmail || activeEmail;
+      document.getElementById('emailRecipientName').value = defaultName || activeCustomer;
+      document.getElementById('emailModal').style.display = 'flex';
+    }
+
+    function submitEmailModal() {
+      const email = document.getElementById('emailRecipient').value.trim();
+      const name = document.getElementById('emailRecipientName').value.trim() || activeCustomer;
+      closeModal('emailModal');
+
+      sendQuickPrompt(`Send this tax invoice to ${name} at ${email}`);
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).style.display = 'none';
+    }
+
+    function clearChat() {
+      chatArea.innerHTML = `
+        <div class="message ai">
+          <div class="avatar ai">AI</div>
+          <div class="bubble">
+            ${activeEntity === 'quote'
+          ? 'Hello! 📑 Ready to convert this Quote into an official <strong>Tax Invoice</strong>?<br><br>Click <strong>⚡ Convert to Invoice</strong> below.'
+          : 'Chat reset. How can I help you with this Invoice today?'}
+          </div>
+        </div>
+      `;
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      document.getElementById('themeBtn').textContent = next === 'light' ? '☀️' : '🌙';
+    }
+
+    // Backdrop click
+    ['convertModal', 'emailModal'].forEach(id => {
+      document.getElementById(id).addEventListener('click', function (e) {
+        if (e.target === this) this.style.display = 'none';
+      });
+    });
+
+    window.addEventListener('DOMContentLoaded', initDynamicsContext);
+  </script>
+</body>
+
+</html>

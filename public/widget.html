@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dynamics 365 Sales AI Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      --bg-page: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-subtle: #f8fafc;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --ai-bubble-bg: #f8fafc;
+      --ai-bubble-border: #e2e8f0;
+      --ai-bubble-text: #1e293b;
+      --user-bubble-bg: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      --user-bubble-text: #ffffff;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --accent-emerald: #10b981;
+      --chip-bg: #f1f5f9;
+      --chip-border: #e2e8f0;
+      --chip-text: #334155;
+    }
+
+    [data-theme="dark"] {
+      --bg-page: #090d16;
+      --bg-card: #151b2b;
+      --bg-subtle: #1e293b;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --ai-bubble-bg: #1e293b;
+      --ai-bubble-border: rgba(255, 255, 255, 0.08);
+      --ai-bubble-text: #e2e8f0;
+      --user-bubble-bg: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      --user-bubble-text: #ffffff;
+      --input-bg: #1e293b;
+      --input-border: rgba(255, 255, 255, 0.12);
+      --chip-bg: rgba(255, 255, 255, 0.06);
+      --chip-border: rgba(255, 255, 255, 0.08);
+      --chip-text: #cbd5e1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 0.82rem;
+      padding: 16px;
+    }
+
+    /* In Dynamics 365 iFrame mode */
+    body.in-iframe {
+      padding: 0 !important;
+      background: transparent !important;
+      height: 100vh !important;
+      width: 100% !important;
+      display: block !important;
+    }
+
+    body.in-iframe .widget-container {
+      max-width: 100% !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      border-radius: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Fixed Compact Size Widget Card */
+    .widget-container {
+      width: 100%;
+      max-width: 380px;
+      height: 590px;
+      max-height: 94vh;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Widget Header */
+    .widget-header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .widget-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .widget-logo {
+      width: 26px;
+      height: 26px;
+      background: var(--primary-gradient);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: white;
+      box-shadow: 0 2px 6px rgba(79, 70, 229, 0.2);
+    }
+
+    .widget-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .widget-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 6px var(--accent-emerald);
+    }
+
+    .widget-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-btn {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.15s;
+    }
+
+    .icon-btn:hover {
+      color: var(--text-main);
+      border-color: var(--primary);
+    }
+
+    /* Context Banner */
+    .context-banner {
+      display: none;
+      background: rgba(79, 70, 229, 0.08);
+      border-bottom: 1px solid rgba(79, 70, 229, 0.18);
+      padding: 6px 12px;
+      font-size: 0.74rem;
+      color: var(--primary);
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .context-banner b {
+      color: var(--text-main);
+    }
+
+    /* Chat Messages */
+    .messages-area {
+      flex: 1;
+      padding: 10px 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      scroll-behavior: smooth;
+      background: var(--bg-card);
+    }
+
+    .message {
+      display: flex;
+      gap: 7px;
+      max-width: 92%;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .avatar.ai {
+      background: var(--primary-gradient);
+      color: white;
+    }
+
+    .avatar.user {
+      background: #0284c7;
+      color: white;
+    }
+
+    .bubble {
+      padding: 7px 10px;
+      border-radius: 10px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .message.ai .bubble {
+      background: var(--ai-bubble-bg);
+      border: 1px solid var(--ai-bubble-border);
+      color: var(--ai-bubble-text);
+      border-top-left-radius: 2px;
+    }
+
+    .message.user .bubble {
+      background: var(--user-bubble-bg);
+      color: var(--user-bubble-text);
+      border-top-right-radius: 2px;
+    }
+
+    .bubble strong {
+      font-weight: 600;
+    }
+
+    .bubble ul {
+      margin-left: 14px;
+      margin-top: 4px;
+    }
+
+    /* Context Switch Divider (Model 1: Global Unified Chat) */
+    .context-divider {
+      text-align: center;
+      margin: 10px 0;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .context-divider::before,
+    .context-divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px dashed var(--border-color);
+    }
+
+    .context-divider span {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 500;
+      color: var(--primary);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    /* Quick Chips */
+    .quick-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 6px 10px;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-card);
+      flex-shrink: 0;
+    }
+
+    .chip {
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      color: var(--chip-text);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.71rem;
+      white-space: nowrap;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.15s;
+      flex: 1 1 calc(33.333% - 6px);
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+    }
+
+    .chip:hover {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    /* Chat Input */
+    .chat-input-area {
+      padding: 8px 10px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 6px;
+      background: var(--bg-card);
+      flex-shrink: 0;
+    }
+
+    .chat-input-area input {
+      flex: 1;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: var(--text-main);
+      font-size: 0.8rem;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .chat-input-area input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    }
+
+    .btn-send {
+      background: var(--primary-gradient);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 0 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: opacity 0.15s;
+    }
+
+    .btn-send:hover {
+      opacity: 0.9;
+    }
+
+
+
+    /* Typing Indicator */
+    .typing-indicator {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      padding: 5px 8px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      width: fit-content;
+      margin-left: 32px;
+    }
+
+    .dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      animation: bounce 1.2s infinite ease-in-out;
+    }
+
+    .dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes bounce {
+
+      0%,
+      80%,
+      100% {
+        transform: translateY(0);
+      }
+
+      40% {
+        transform: translateY(-4px);
+      }
+    }
+
+    /* Modals */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+    }
+
+    .modal-card {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 16px;
+      width: 100%;
+      max-width: 320px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+    }
+
+    .modal-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      margin-bottom: 3px;
+      color: var(--text-main);
+    }
+
+    .modal-desc {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .modal-input {
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg);
+      color: var(--text-main);
+      font-size: 0.78rem;
+      outline: none;
+      margin-bottom: 8px;
+      font-family: inherit;
+    }
+
+    .modal-btns {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .btn-submit {
+      flex: 1;
+      padding: 7px;
+      background: var(--primary-gradient);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-cancel {
+      padding: 7px 12px;
+      background: var(--bg-subtle);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Small Widget Container Card -->
+  <div class="widget-container">
+    <!-- Header -->
+    <div class="widget-header">
+      <div class="widget-brand">
+        <div class="widget-logo">💼</div>
+        <div class="widget-title">
+          <span>Sales AI Agent</span>
+          <span class="widget-status-dot" title="Live Dynamics 365 Connected"></span>
+        </div>
+      </div>
+      <div class="widget-actions">
+        <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle Light/Dark">☀️</button>
+        <button class="icon-btn" onclick="clearChat()" title="Reset Chat">🔄</button>
+      </div>
+    </div>
+
+    <!-- Context Banner for Current Record -->
+    <div class="context-banner" id="contextBanner">
+      <div>
+        <span>Context: </span><b id="contextLeadName">Active Lead</b> <span id="contextCompany"></span>
+      </div>
+      <span style="font-size:0.68rem; opacity:0.8;">Synced</span>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages-area" id="chatArea">
+      <div class="message ai">
+        <div class="avatar ai">AI</div>
+        <div class="bubble">
+          Hello! 💼 I am your <strong>Dynamics 365 Sales AI Agent</strong>.<br><br>
+          Ask me to lookup client notes, log new leads, dispatch sales brochures, or check pipeline status.
+        </div>
+      </div>
+    </div>
+
+    <div class="typing-indicator" id="typingIndicator">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+
+    <!-- Quick Action Chips -->
+    <div class="quick-chips" id="quickChips">
+      <div class="chip" onclick="openSearchModal()">🔍 Search Lead</div>
+      <div class="chip" onclick="openApptModal()">📅 Book Meeting</div>
+      <div class="chip" onclick="openTaskModal()">📝 Add Task</div>
+      <div class="chip" onclick="qualifyActiveLead()">🏆 Qualify</div>
+      <div class="chip" onclick="sendQuickPrompt('Pipeline status')">📊 Pipeline</div>
+      <div class="chip" onclick="openEmailModal()">📄 Brochure</div>
+      <div class="chip" onclick="openLeadModal()">➕ Log Lead</div>
+    </div>
+
+    <!-- Chat Input -->
+    <div class="chat-input-area">
+      <input type="text" id="userInput" placeholder="Ask Sales AI Agent..." onkeypress="handleKey(event)" />
+      <button class="btn-send" onclick="sendMessage()">Send</button>
+    </div>
+
+    <!-- Search Modal -->
+    <div class="modal-overlay" id="searchModal">
+      <div class="modal-card">
+        <div class="modal-title">🔍 Search Lead</div>
+        <div class="modal-desc">Query Microsoft Dynamics 365 records</div>
+        <input type="text" id="searchQueryInput" class="modal-input" placeholder="Name or company..."
+          onkeypress="if(event.key==='Enter')submitSearchModal()" />
+        <div class="modal-btns">
+          <button class="btn-submit" onclick="submitSearchModal()">Search</button>
+          <button class="btn-cancel" onclick="closeSearchModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log Lead Modal -->
+    <div class="modal-overlay" id="leadModal">
+      <div class="modal-card">
+        <div class="modal-title">➕ Log New Lead</div>
+        <div class="modal-desc">Pushes record to Dynamics 365 Sales Hub</div>
+        <input type="text" id="leadName" class="modal-input" placeholder="Full Name *" />
+        <input type="email" id="leadEmail" class="modal-input" placeholder="Email *" />
+        <input type="tel" id="leadPhone" class="modal-input" placeholder="Phone *" />
+        <input type="text" id="leadCompany" class="modal-input" placeholder="Company Name" />
+        <input type="text" id="leadNote" class="modal-input" placeholder="Notes / Interest" />
+        <div class="modal-btns">
+          <button class="btn-submit" onclick="submitLeadModal()">Save to CRM</button>
+          <button class="btn-cancel" onclick="closeLeadModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Modal -->
+    <div class="modal-overlay" id="emailModal">
+      <div class="modal-card">
+        <div class="modal-title">📄 Send Brochure / Quotation</div>
+        <div class="modal-desc">Email sales kit or upload custom file from your PC</div>
+        <input type="text" id="emailName" class="modal-input" placeholder="Prospect Name *" />
+        <input type="email" id="emailTo" class="modal-input" placeholder="Email Address *" />
+        <div style="margin-bottom: 10px;">
+          <label style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:4px;">📎 Choose File
+            from PC (Optional):</label>
+          <input type="file" id="emailAttachmentFile" class="modal-input" accept=".pdf,.doc,.docx,.txt,.png,.jpg"
+            style="padding: 6px; font-size: 0.74rem;" />
+          <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">Leave empty to send default Product
+            Brochure PDF.</div>
+        </div>
+        <div class="modal-btns">
+          <button class="btn-submit" id="btnSendEmailModal" onclick="submitEmailModal()">Send Email</button>
+          <button class="btn-cancel" onclick="closeEmailModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Appointment Modal -->
+    <div class="modal-overlay" id="apptModal">
+      <div class="modal-card">
+        <div class="modal-title">📅 Schedule Appointment</div>
+        <div class="modal-desc">Creates Activity in Dynamics 365 regarding this Lead</div>
+        <input type="text" id="apptLeadName" class="modal-input" placeholder="Lead / Client Name *" />
+        <input type="text" id="apptSubject" class="modal-input" placeholder="Meeting Subject *"
+          value="Product Demo & Consultation" />
+        <input type="datetime-local" id="apptDateTime" class="modal-input" />
+        <div class="modal-btns">
+          <button class="btn-submit" onclick="submitApptModal()">Schedule Activity</button>
+          <button class="btn-cancel" onclick="closeApptModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div class="modal-overlay" id="taskModal">
+      <div class="modal-card">
+        <div class="modal-title">📝 Create Task</div>
+        <div class="modal-desc">Creates an Activity Task in Dynamics 365 regarding this Lead</div>
+        <input type="text" id="taskLeadName" class="modal-input" placeholder="Lead / Client Name (Optional)" />
+        <input type="text" id="taskSubject" class="modal-input"
+          placeholder="Task Subject * (e.g. Follow up on quotation)" />
+        <input type="datetime-local" id="taskDueDate" class="modal-input" />
+        <input type="text" id="taskDesc" class="modal-input" placeholder="Task Notes / Description" />
+        <div class="modal-btns">
+          <button class="btn-submit" onclick="submitTaskModal()">Create Task</button>
+          <button class="btn-cancel" onclick="closeTaskModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+
+  </div>
+
+  <script>
+    // Detect if embedded inside an iframe (like Dynamics 365 Form)
+    if (window.self !== window.top) {
+      document.body.classList.add('in-iframe');
+    }
+
+    const chatArea = document.getElementById('chatArea');
+    const userInput = document.getElementById('userInput');
+    const typingIndicator = document.getElementById('typingIndicator');
+    const contextBanner = document.getElementById('contextBanner');
+    const contextLeadName = document.getElementById('contextLeadName');
+    const contextCompany = document.getElementById('contextCompany');
+    const quickChips = document.getElementById('quickChips');
+
+    // ==========================================
+    // MODEL 1: Global Unified Single Chat Stream
+    // ==========================================
+    // Clean Global Chat Stream (No Active Lead Dividers)
+    // ==========================================
+    const STORAGE_KEY_MESSAGES = 'copilot_global_chat_stream_v2';
+    const STORAGE_KEY_SESSION = 'copilot_global_session_id_v2';
+
+    // Scrub legacy cached storage that contained "Active Lead" chips
+    try {
+      localStorage.removeItem('copilot_global_messages_v1');
+      localStorage.removeItem('copilot_global_last_lead_v1');
+      localStorage.removeItem('copilot_global_last_lead');
+    } catch (e) { }
+
+    let mySessionId = 'session_global_default';
+    try {
+      mySessionId = localStorage.getItem(STORAGE_KEY_SESSION);
+      if (!mySessionId) {
+        mySessionId = 'session_global_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+        localStorage.setItem(STORAGE_KEY_SESSION, mySessionId);
+      }
+    } catch (e) {
+      mySessionId = 'session_global_' + Math.random().toString(36).substring(2, 9);
+    }
+
+    function getSavedMessages() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_MESSAGES);
+        const list = raw ? JSON.parse(raw) : [];
+        // Strictly filter out any legacy or accidental divider, Active Lead, or inverted messages
+        return list.filter(m => m && m.type !== 'divider' && !String(m.text || '').includes('Active Lead') && m.text !== 'ai' && m.text !== 'user');
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveMessageToStorage(item) {
+      try {
+        if (!item || item.type === 'divider' || String(item.text || '').includes('Active Lead')) return;
+        const msgs = getSavedMessages();
+        msgs.push(item);
+        if (msgs.length > 100) msgs.shift();
+        localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(msgs));
+      } catch (e) {
+        console.error('Storage save error:', e);
+      }
+    }
+
+    function renderMessage(text, sender) {
+      if (!text || String(text).includes('Active Lead')) return;
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${sender}`;
+
+      const avatarDiv = document.createElement('div');
+      avatarDiv.className = `avatar ${sender}`;
+      avatarDiv.textContent = sender === 'user' ? 'ME' : 'AI';
+
+      const bubbleDiv = document.createElement('div');
+      bubbleDiv.className = 'bubble';
+      bubbleDiv.innerHTML = formatMarkdown(text);
+
+      msgDiv.appendChild(avatarDiv);
+      msgDiv.appendChild(bubbleDiv);
+      chatArea.appendChild(msgDiv);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function appendMessage(text, sender, save = true) {
+      renderMessage(text, sender);
+      if (save) {
+        saveMessageToStorage({ type: 'message', text, sender, timestamp: Date.now() });
+      }
+    }
+
+    function restoreGlobalChat() {
+      const msgs = getSavedMessages();
+      if (msgs && msgs.length > 0) {
+        chatArea.innerHTML = '';
+        msgs.forEach(m => {
+          renderMessage(m.text, m.sender);
+        });
+        return true;
+      }
+      return false;
+    }
+
+    // Context Detection via URL Params (e.g. ?id={GUID}&leadname=Rahul Desai or ?data=id%3D...)
+    const urlParams = new URLSearchParams(window.location.search);
+    let activeLeadId = urlParams.get('id') || urlParams.get('ID') || urlParams.get('leadid') || urlParams.get('Id');
+    if (!activeLeadId && urlParams.get('data')) {
+      try {
+        const dataParams = new URLSearchParams(urlParams.get('data'));
+        activeLeadId = dataParams.get('id') || dataParams.get('ID') || dataParams.get('leadid');
+      } catch (e) { }
+    }
+    if (activeLeadId) activeLeadId = decodeURIComponent(activeLeadId).replace(/[{}]/g, '');
+    let activeLeadName = urlParams.get('leadname') || urlParams.get('name') || urlParams.get('fullname');
+    let activeCompany = urlParams.get('company') || urlParams.get('companyname');
+    let activeEmail = urlParams.get('email') || urlParams.get('emailaddress1');
+
+    try {
+      if (window.parent && window.parent.Xrm && window.parent.Xrm.Page && window.parent.Xrm.Page.data) {
+        const entity = window.parent.Xrm.Page.data.entity;
+        const pId = entity.getId();
+        const fnAttr = window.parent.Xrm.Page.getAttribute('fullname');
+        if (pId) activeLeadId = pId.replace(/[{}]/g, '');
+        if (fnAttr && fnAttr.getValue()) activeLeadName = fnAttr.getValue();
+      }
+    } catch (e) { }
+
+    // 1. First, restore persistent Global Chat
+    const hadRestoredHistory = restoreGlobalChat();
+
+    function applyLeadContext(name, company, email, id) {
+      if (!name) return;
+      activeLeadName = name;
+      if (company) activeCompany = company;
+      if (email) activeEmail = email;
+      if (id) activeLeadId = id;
+
+      contextBanner.style.display = 'flex';
+      contextLeadName.textContent = activeLeadName;
+      if (activeCompany) contextCompany.textContent = `(${activeCompany})`;
+
+      quickChips.innerHTML = `
+        <div class="chip" onclick="openSearchModal()">🔍 Search Lead</div>
+        <div class="chip" onclick="openApptModal('${activeLeadName}')">📅 Meeting</div>
+        <div class="chip" onclick="openTaskModal('${activeLeadName}')">📝 Task</div>
+        <div class="chip" onclick="sendQuickPrompt('Check notes for ${activeLeadName}')">📋 Notes</div>
+        <div class="chip" onclick="qualifyActiveLead()">🏆 Qualify</div>
+        <div class="chip" onclick="sendQuickPrompt('Pipeline status')">📊 Pipeline</div>
+        <div class="chip" onclick="openEmailModal()">📄 Brochure</div>
+        <div class="chip" onclick="openLeadModal()">➕ New Lead</div>
+      `;
+    }
+
+    if (activeLeadName) {
+      applyLeadContext(activeLeadName, activeCompany, activeEmail, activeLeadId);
+    } else if (activeLeadId) {
+      fetch(`/api/lead-by-id?id=${encodeURIComponent(activeLeadId)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.lead) {
+            applyLeadContext(data.lead.fullname, data.lead.company, data.lead.email, data.lead.leadid);
+          }
+        })
+        .catch(err => console.error('Error fetching lead context:', err));
+    }
+
+    // Listen for postMessage from parent Dynamics 365 window
+    window.addEventListener('message', async (event) => {
+      if (event.data && event.data.type === 'DYNAMICS_CONTEXT') {
+        const d = event.data;
+        if (d.leadName || d.fullname) {
+          applyLeadContext(d.leadName || d.fullname, d.company || d.companyname, d.email || d.emailaddress1, d.id || d.leadid);
+        }
+      }
+    });
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      document.getElementById('themeBtn').textContent = next === 'dark' ? '🌙' : '☀️';
+    }
+
+    function clearChat() {
+      chatArea.innerHTML = `
+        <div class="message ai">
+          <div class="avatar ai">AI</div>
+          <div class="bubble">Chat reset. Sales AI Agent is ready for your Dynamics 365 commands! 💼</div>
+        </div>
+      `;
+      try {
+        localStorage.removeItem(STORAGE_KEY_MESSAGES);
+        mySessionId = 'session_global_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+        localStorage.setItem(STORAGE_KEY_SESSION, mySessionId);
+        localStorage.removeItem(STORAGE_KEY_LAST_LEAD);
+      } catch (e) { }
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter') sendMessage();
+    }
+
+    function sendQuickPrompt(prompt) {
+      userInput.value = prompt;
+      sendMessage();
+    }
+
+    function qualifyActiveLead() {
+      let leadToQualify = activeLeadName;
+      try {
+        if (window.parent && window.parent.Xrm && window.parent.Xrm.Page && window.parent.Xrm.Page.data) {
+          const fnAttr = window.parent.Xrm.Page.getAttribute('fullname');
+          if (fnAttr && fnAttr.getValue()) leadToQualify = fnAttr.getValue();
+        }
+      } catch (e) { }
+
+      if (leadToQualify) {
+        sendQuickPrompt(`Qualify ${leadToQualify} to opportunity`);
+      } else {
+        sendQuickPrompt(`Qualify this lead to opportunity`);
+      }
+    }
+
+    function formatMarkdown(text) {
+      if (!text) return '';
+      let t = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      t = t.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      t = t.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      t = t.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.06); padding:2px 4px; border-radius:4px; font-size:0.75rem;">$1</code>');
+      // Collapse excessive multi-newlines and format paragraph breaks cleanly without huge voids
+      t = t.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+      t = t.replace(/\n\n/g, '<br><span style="display:block; height:5px;"></span>');
+      t = t.replace(/\n/g, '<br>');
+      return t;
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text) return;
+
+      appendMessage(text, 'user');
+      userInput.value = '';
+      typingIndicator.style.display = 'flex';
+      chatArea.scrollTop = chatArea.scrollHeight;
+
+      try {
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            sessionId: mySessionId,
+            currentLeadId: activeLeadId,
+            currentLeadName: activeLeadName,
+            currentLeadCompany: activeCompany,
+            currentLeadEmail: activeEmail,
+            timezone: userTimezone
+          })
+        });
+        const data = await res.json();
+        typingIndicator.style.display = 'none';
+
+        if (data.reply) {
+          appendMessage(data.reply, 'ai');
+        } else {
+          appendMessage('Sorry, no response received.', 'ai');
+        }
+
+        // Auto-refresh parent Dynamics 365 form when Task, Appointment or Lead qualification happens
+        if (data.reply && (
+          data.reply.includes('Task Created') ||
+          data.reply.includes('Appointment Scheduled') ||
+          data.reply.includes('Lead Successfully Qualified')
+        )) {
+          try {
+            if (window.parent && window.parent.Xrm && window.parent.Xrm.Page && window.parent.Xrm.Page.data) {
+              console.log('🔄 Auto-refreshing parent Dynamics 365 form for Up next & Timeline update...');
+              setTimeout(() => {
+                window.parent.Xrm.Page.data.refresh(false);
+              }, 1000);
+            }
+          } catch (e) { }
+        }
+
+        if (data.navigateToLead && data.navigateToLead.id) {
+          setTimeout(() => {
+            openLeadInDynamics(data.navigateToLead.id, data.navigateToLead.name);
+          }, 600);
+        }
+      } catch (err) {
+        typingIndicator.style.display = 'none';
+        appendMessage('⚠️ Error connecting to Copilot service.', 'ai');
+      }
+    }
+
+    function openLeadInDynamics(leadId, leadName) {
+      const cleanId = String(leadId).replace(/[{}]/g, '');
+      console.log('Navigating to lead in Dynamics 365:', cleanId, leadName);
+
+      // 1. Try Dynamics 365 Client API if accessible
+      try {
+        if (window.parent && window.parent.Xrm && window.parent.Xrm.Navigation) {
+          window.parent.Xrm.Navigation.openForm({
+            entityName: 'lead',
+            entityId: cleanId,
+            openInNewWindow: false
+          });
+          return;
+        }
+      } catch (e) {
+        console.log('Parent Xrm access restricted:', e.message);
+      }
+
+      // 2. Direct Dynamics 365 Sales Hub URL navigation
+      const crmUrl = 'https://orgfaf1cf48.crm8.dynamics.com';
+      const appId = '9c63e8a4-2f8e-f111-8077-e4fb1efed92c';
+      const targetUrl = `${crmUrl}/main.aspx?appid=${appId}&pagetype=entityrecord&etn=lead&id=${cleanId}`;
+
+      try {
+        window.top.location.href = targetUrl;
+      } catch (e1) {
+        try {
+          window.parent.location.href = targetUrl;
+        } catch (e2) {
+          window.open(targetUrl, '_top');
+        }
+      }
+    }
+
+    // Modal Handlers
+    function openSearchModal() {
+      document.getElementById('searchModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('searchQueryInput').focus(), 50);
+    }
+    function closeSearchModal() { document.getElementById('searchModal').style.display = 'none'; }
+    function submitSearchModal() {
+      const q = document.getElementById('searchQueryInput').value.trim();
+      if (!q) return;
+      closeSearchModal();
+      sendQuickPrompt(`Search lead: ${q}`);
+    }
+
+    function openLeadModal() {
+      document.getElementById('leadModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('leadName').focus(), 50);
+    }
+    function closeLeadModal() {
+      document.getElementById('leadModal').style.display = 'none';
+      ['leadName', 'leadEmail', 'leadPhone', 'leadCompany', 'leadNote'].forEach(id => document.getElementById(id).value = '');
+    }
+    function submitLeadModal() {
+      const name = document.getElementById('leadName').value.trim();
+      const email = document.getElementById('leadEmail').value.trim();
+      const phone = document.getElementById('leadPhone').value.trim();
+      const company = document.getElementById('leadCompany').value.trim();
+      const note = document.getElementById('leadNote').value.trim();
+      if (!name || !email || !phone) {
+        alert('Please fill Name, Email and Phone.');
+        return;
+      }
+      const companyPart = company ? `, company: ${company}` : '';
+      const notePart = note ? `, ${note}` : ', phone inquiry';
+      closeLeadModal();
+      sendQuickPrompt(`Log lead: ${name}, ${email}, ${phone}${companyPart}${notePart}`);
+    }
+
+    function openEmailModal() {
+      document.getElementById('emailModal').style.display = 'flex';
+      if (activeLeadName) document.getElementById('emailName').value = activeLeadName;
+      if (activeEmail) document.getElementById('emailTo').value = activeEmail;
+      const fileInput = document.getElementById('emailAttachmentFile');
+      if (fileInput) fileInput.value = '';
+      setTimeout(() => document.getElementById(activeEmail ? 'emailAttachmentFile' : 'emailTo').focus(), 50);
+    }
+    function closeEmailModal() {
+      document.getElementById('emailModal').style.display = 'none';
+      ['emailName', 'emailTo'].forEach(id => document.getElementById(id).value = '');
+      const fileInput = document.getElementById('emailAttachmentFile');
+      if (fileInput) fileInput.value = '';
+    }
+    async function submitEmailModal() {
+      const name = document.getElementById('emailName').value.trim();
+      const email = document.getElementById('emailTo').value.trim();
+      const fileInput = document.getElementById('emailAttachmentFile');
+      if (!name || !email) {
+        alert('Please fill Name and Email.');
+        return;
+      }
+
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      closeEmailModal();
+
+      if (file) {
+        appendMessage(`Send attachment "${file.name}" to ${name} at ${email}`, 'user');
+        typingIndicator.style.display = 'flex';
+        chatArea.scrollTop = chatArea.scrollHeight;
+
+        const reader = new FileReader();
+        reader.onload = async function () {
+          try {
+            const base64Data = reader.result;
+            const res = await fetch('/api/send-email-attachment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                toEmail: email,
+                customerName: name,
+                fileName: file.name,
+                fileType: file.type,
+                fileBase64: base64Data,
+                currentLeadId: activeLeadId,
+              })
+            });
+            const data = await res.json();
+            typingIndicator.style.display = 'none';
+            if (data.success) {
+              appendMessage(`📧 **Custom File Sent!**\n\nDispatched **\`${file.name}\`** directly to **${email}** (${name}).\n\n📄 **Status:** ${data.status}`, 'ai');
+            } else {
+              appendMessage(`⚠️ Failed to send attachment: ${data.error || 'Unknown error'}`, 'ai');
+            }
+          } catch (err) {
+            typingIndicator.style.display = 'none';
+            appendMessage(`⚠️ Error sending file: ${err.message}`, 'ai');
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        sendQuickPrompt(`Send brochure to ${name} at ${email}`);
+      }
+    }
+
+    function openApptModal(leadName) {
+      document.getElementById('apptModal').style.display = 'flex';
+      const nameInput = document.getElementById('apptLeadName');
+      if (leadName || activeLeadName) {
+        nameInput.value = leadName || activeLeadName;
+      }
+      // Pre-fill tomorrow 11:00 AM in local timezone
+      const tmrw = new Date();
+      tmrw.setDate(tmrw.getDate() + 1);
+      const pad = (n) => String(n).padStart(2, '0');
+      const localStr = `${tmrw.getFullYear()}-${pad(tmrw.getMonth() + 1)}-${pad(tmrw.getDate())}T11:00`;
+      document.getElementById('apptDateTime').value = localStr;
+      setTimeout(() => document.getElementById('apptSubject').focus(), 50);
+    }
+    function closeApptModal() {
+      document.getElementById('apptModal').style.display = 'none';
+      ['apptLeadName'].forEach(id => document.getElementById(id).value = '');
+    }
+    function submitApptModal() {
+      const name = document.getElementById('apptLeadName').value.trim();
+      const subject = document.getElementById('apptSubject').value.trim() || 'Product Demo & Consultation';
+      const dt = document.getElementById('apptDateTime').value;
+      if (!name) {
+        alert('Please specify Lead Name.');
+        return;
+      }
+      closeApptModal();
+      let dtText = '';
+      if (dt) {
+        const d = new Date(dt);
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        dtText = ` for ${dateStr} at ${timeStr} (exact time: ${d.toISOString()})`;
+      }
+      sendQuickPrompt(`Schedule appointment with ${name} for ${subject}${dtText}`);
+    }
+
+    function openTaskModal(leadName) {
+      document.getElementById('taskModal').style.display = 'flex';
+      const name = leadName || activeLeadName || '';
+      document.getElementById('taskLeadName').value = name;
+      const tmrw = new Date();
+      tmrw.setDate(tmrw.getDate() + 1);
+      const pad = (n) => String(n).padStart(2, '0');
+      const localStr = `${tmrw.getFullYear()}-${pad(tmrw.getMonth() + 1)}-${pad(tmrw.getDate())}T17:00`;
+      document.getElementById('taskDueDate').value = localStr;
+      setTimeout(() => document.getElementById('taskSubject').focus(), 50);
+    }
+    function closeTaskModal() {
+      document.getElementById('taskModal').style.display = 'none';
+      ['taskSubject', 'taskDesc'].forEach(id => document.getElementById(id).value = '');
+    }
+    function submitTaskModal() {
+      const name = document.getElementById('taskLeadName').value.trim();
+      const subject = document.getElementById('taskSubject').value.trim();
+      const dt = document.getElementById('taskDueDate').value;
+      const desc = document.getElementById('taskDesc').value.trim();
+      if (!subject) {
+        alert('Please enter a task subject.');
+        return;
+      }
+      closeTaskModal();
+      let dtText = '';
+      if (dt) {
+        const d = new Date(dt);
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        dtText = ` by ${dateStr} at ${timeStr} (exact time: ${d.toISOString()})`;
+      }
+      const regardingText = name ? ` for ${name}` : '';
+      const descText = desc ? `. Note: ${desc}` : '';
+      sendQuickPrompt(`Create task${regardingText}: ${subject}${dtText}${descText}`);
+    }
+
+
+
+    // Backdrop click
+    ['searchModal', 'leadModal', 'emailModal', 'apptModal', 'taskModal'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('click', function (e) {
+          if (e.target === this) this.style.display = 'none';
+        });
+      }
+    });
+
+
+  </script>
+</body>
+
+</html>
