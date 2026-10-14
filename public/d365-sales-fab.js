@@ -83,7 +83,7 @@ SalesAIAgent.cleanup = function () {
     if (drawer && drawer.parentNode) {
       drawer.parentNode.removeChild(drawer);
     }
-  } catch (e) {}
+  } catch (e) { }
 };
 
 /**
@@ -103,13 +103,13 @@ SalesAIAgent.startNavigationWatcher = function () {
           clearInterval(SalesAIAgent.watcherInterval);
           SalesAIAgent.watcherInterval = null;
         }
-      } catch (ex) {}
+      } catch (ex) { }
     }, 600);
 
     // Also attach to window unload
     window.addEventListener("beforeunload", SalesAIAgent.cleanup);
     window.addEventListener("unload", SalesAIAgent.cleanup);
-  } catch (e) {}
+  } catch (e) { }
 };
 
 /**
@@ -122,7 +122,7 @@ SalesAIAgent.closeNativeSidePane = function () {
       var pane = xrm.App.sidePanes.getPane("SalesAIAgentSidePane");
       if (pane) pane.close();
     }
-  } catch (e) {}
+  } catch (e) { }
 };
 
 /**
@@ -171,10 +171,10 @@ SalesAIAgent.toggleDrawer = function () {
       // Refresh iframe URL with current lead context
       var ctx = SalesAIAgent.getLeadContext();
       var frame = targetDoc.getElementById("d365-sales-ai-frame");
-      var targetUrl = SalesAIAgent.WIDGET_URL + 
-                      "?id=" + encodeURIComponent(ctx.leadId) +
-                      "&leadname=" + encodeURIComponent(ctx.leadName) +
-                      "&company=" + encodeURIComponent(ctx.company);
+      var targetUrl = SalesAIAgent.WIDGET_URL +
+        "?id=" + encodeURIComponent(ctx.leadId) +
+        "&leadname=" + encodeURIComponent(ctx.leadName) +
+        "&company=" + encodeURIComponent(ctx.company);
 
       if (frame && (!frame.src || frame.src === "about:blank" || !frame.src.includes(ctx.leadId))) {
         frame.src = targetUrl;
