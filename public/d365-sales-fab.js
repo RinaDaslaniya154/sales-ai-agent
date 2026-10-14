@@ -10,8 +10,8 @@
 
 var SalesAIAgent = window.SalesAIAgent || {};
 
-// Active Cloudflare Tunnel URL for Sales AI Agent Widget
-SalesAIAgent.WIDGET_URL = "https://tongue-regression-matters-part.trycloudflare.com/widget";
+// Permanent Cloud Live URL for Sales AI Agent Widget (Render.com)
+SalesAIAgent.WIDGET_URL = "https://sales-ai-agent-sfn2.onrender.com/widget";
 
 SalesAIAgent.currentFormContext = null;
 SalesAIAgent.watcherInterval = null;

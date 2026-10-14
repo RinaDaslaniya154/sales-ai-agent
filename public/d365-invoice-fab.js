@@ -8,8 +8,8 @@
 var InvoiceAIAgent = window.InvoiceAIAgent || {};
 
 InvoiceAIAgent.PANE_ID = "InvoiceAIAgentSidePane";
-// Replace with your Web Resource name OR Cloudflare Tunnel URL
-InvoiceAIAgent.WIDGET_URL = "https://tongue-regression-matters-part.trycloudflare.com/invoice";
+// Permanent Cloud Live URL for Invoice AI Agent (Render.com)
+InvoiceAIAgent.WIDGET_URL = "https://sales-ai-agent-sfn2.onrender.com/invoice";
 
 /**
  * Toggle Side Pane: Open if closed, Close if opened

@@ -25,10 +25,10 @@
   </style>
 </head>
 <body>
-  <!-- Cloudflare Live Tunnel URL for Sales AI Agent -->
+  <!-- Permanent Live URL for Sales AI Agent -->
   <iframe 
     id="agentFrame"
-    src="https://tongue-regression-matters-part.trycloudflare.com/widget" 
+    src="https://sales-ai-agent-sfn2.onrender.com/widget" 
     allow="clipboard-read; clipboard-write; microphone"
     onload="console.log('Sales AI Agent widget loaded successfully')">
   </iframe>
@@ -44,9 +44,9 @@
           var urlParams = new URLSearchParams(currentParams);
           var dataVal = urlParams.get('data');
           if (dataVal) {
-            frame.src = "https://tongue-regression-matters-part.trycloudflare.com/widget?" + dataVal;
+            frame.src = "https://sales-ai-agent-sfn2.onrender.com/widget?" + dataVal;
           } else {
-            frame.src = "https://tongue-regression-matters-part.trycloudflare.com/widget" + currentParams;
+            frame.src = "https://sales-ai-agent-sfn2.onrender.com/widget" + currentParams;
           }
         }
       }
