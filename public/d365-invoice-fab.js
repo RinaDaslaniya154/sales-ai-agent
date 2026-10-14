@@ -25,13 +25,19 @@ InvoiceAIAgent.onLoad = function (executionContext) {
       InvoiceAIAgent.currentFormContext = executionContext.getFormContext();
     }
 
+    // Strictly ensure we are on the Invoice / Quote record form!
+    if (!InvoiceAIAgent.isInvoiceFormActive()) {
+      InvoiceAIAgent.cleanup();
+      return;
+    }
+
     // 1. Close any legacy native side pane if opened previously
     InvoiceAIAgent.closeNativeSidePane();
 
     // 2. Inject or show floating button & popup drawer for Invoice/Quote
     InvoiceAIAgent.initUI();
 
-    // 3. Start navigation watcher to clean up only when user leaves Invoice/Quote
+    // 3. Start navigation watcher to clean up the second user leaves Invoice form
     InvoiceAIAgent.startNavigationWatcher();
   } catch (err) {
     console.error("Error in InvoiceAIAgent.onLoad:", err);
@@ -39,29 +45,44 @@ InvoiceAIAgent.onLoad = function (executionContext) {
 };
 
 /**
- * Check if the active screen is an Invoice or Quote
+ * Check if the active screen is strictly an Invoice or Quote Record Form (NOT list/grid)
  */
-InvoiceAIAgent.isInvoiceOrQuoteActive = function () {
+InvoiceAIAgent.isInvoiceFormActive = function () {
   try {
     var topWin = window.top || window;
     var href = (topWin.location && topWin.location.href) || "";
 
-    // If URL contains etn=invoice or etn=quote, it's active!
-    if (href.indexOf("etn=invoice") !== -1 || href.indexOf("etn=quote") !== -1) {
+    // 1. If pagetype is entitylist (All Invoices / Views), it is NOT the record form -> Return false!
+    if (href.indexOf("pagetype=entitylist") !== -1) {
+      return false;
+    }
+
+    // 2. If URL contains other entities (Leads, Contacts, Accounts, etc.) -> Return false!
+    if (href.indexOf("etn=lead") !== -1 || href.indexOf("etn=account") !== -1 || href.indexOf("etn=contact") !== -1 || href.indexOf("etn=opportunity") !== -1) {
+      return false;
+    }
+
+    // 3. Must be an entityrecord with etn=invoice or etn=quote
+    var isRecord = (href.indexOf("pagetype=entityrecord") !== -1) || (href.indexOf("id=") !== -1);
+    var isInvoice = (href.indexOf("etn=invoice") !== -1) || (href.indexOf("etn=quote") !== -1);
+    if (isRecord && isInvoice) {
       return true;
     }
 
-    // Check CRM formContext
+    // 4. Check CRM formContext
     var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (window.top && window.top.Xrm);
     var fc = InvoiceAIAgent.currentFormContext || (xrm && xrm.Page);
     if (fc && fc.data && fc.data.entity) {
       var ent = fc.data.entity.getEntityName();
-      return ent === "invoice" || ent === "quote";
+      var id = fc.data.entity.getId();
+      if ((ent === "invoice" || ent === "quote") && id) {
+        return true;
+      }
     }
 
-    return true; // Default to true to prevent accidental removal
+    return false;
   } catch (e) {
-    return true;
+    return false;
   }
 };
 
@@ -83,7 +104,7 @@ InvoiceAIAgent.cleanup = function () {
 };
 
 /**
- * Navigation Watcher: Monitors when user leaves Invoice / Quote entity
+ * Navigation Watcher: Monitors when user leaves Invoice Form (e.g. back to All Invoices, Leads, etc.)
  */
 InvoiceAIAgent.startNavigationWatcher = function () {
   try {
@@ -93,18 +114,32 @@ InvoiceAIAgent.startNavigationWatcher = function () {
 
     InvoiceAIAgent.watcherInterval = setInterval(function () {
       try {
-        if (!InvoiceAIAgent.isInvoiceOrQuoteActive()) {
-          // User navigated away to Leads, Contacts, etc. -> Cleanup!
+        if (!InvoiceAIAgent.isInvoiceFormActive()) {
+          // User navigated away to All Invoices, Leads, Contacts, etc. -> Cleanup completely!
           InvoiceAIAgent.cleanup();
           clearInterval(InvoiceAIAgent.watcherInterval);
           InvoiceAIAgent.watcherInterval = null;
         }
       } catch (ex) { }
-    }, 600);
+    }, 400);
 
-    // Also attach to window unload
+    // Also attach to window unload and popstate
     window.addEventListener("beforeunload", InvoiceAIAgent.cleanup);
     window.addEventListener("unload", InvoiceAIAgent.cleanup);
+
+    try {
+      var topWin = window.top || window;
+      topWin.addEventListener("popstate", function () {
+        if (!InvoiceAIAgent.isInvoiceFormActive()) {
+          InvoiceAIAgent.cleanup();
+        }
+      });
+      topWin.addEventListener("hashchange", function () {
+        if (!InvoiceAIAgent.isInvoiceFormActive()) {
+          InvoiceAIAgent.cleanup();
+        }
+      });
+    } catch (eTop) { }
   } catch (e) { }
 };
 
@@ -438,9 +473,13 @@ InvoiceAIAgent.openSidePane = InvoiceAIAgent.openDrawer;
 InvoiceAIAgent.openInvoiceAI = InvoiceAIAgent.openDrawer;
 InvoiceAIAgent.ribbonClick = InvoiceAIAgent.openDrawer;
 
-// Auto-run if script is evaluated
+// Auto-run ONLY if on the Invoice/Quote record form
 if (typeof window !== "undefined") {
   InvoiceAIAgent.closeNativeSidePane();
-  InvoiceAIAgent.initUI();
+  if (InvoiceAIAgent.isInvoiceFormActive()) {
+    InvoiceAIAgent.initUI();
+    InvoiceAIAgent.startNavigationWatcher();
+  }
 }
+
 
