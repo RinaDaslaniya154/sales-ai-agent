@@ -10,8 +10,8 @@
 
 var InvoiceAIAgent = window.InvoiceAIAgent || {};
 
-// Permanent Cloud Live URL for Invoice AI Agent (Render.com)
-InvoiceAIAgent.WIDGET_URL = "https://sales-ai-agent-sfn2.onrender.com/invoice";
+// Active Cloudflare Tunnel Live URL for Invoice AI Agent (Superfast Local Server)
+InvoiceAIAgent.WIDGET_URL = "https://trio-weblogs-medicare-scout.trycloudflare.com/invoice";
 
 InvoiceAIAgent.currentFormContext = null;
 InvoiceAIAgent.watcherInterval = null;
@@ -91,7 +91,8 @@ InvoiceAIAgent.isInvoiceFormActive = function () {
  */
 InvoiceAIAgent.cleanup = function () {
   try {
-    var targetDoc = window.top.document || document;
+    var topWin = window.top || window;
+    var targetDoc = topWin.document || document;
     var fab = targetDoc.getElementById("d365-invoice-ai-fab");
     if (fab && fab.parentNode) {
       fab.parentNode.removeChild(fab);
@@ -100,47 +101,107 @@ InvoiceAIAgent.cleanup = function () {
     if (drawer && drawer.parentNode) {
       drawer.parentNode.removeChild(drawer);
     }
+    if (topWin.__d365InvoiceWatcher) {
+      topWin.clearInterval(topWin.__d365InvoiceWatcher);
+      topWin.__d365InvoiceWatcher = null;
+    }
   } catch (e) { }
 };
 
 /**
  * Navigation Watcher: Monitors when user leaves Invoice Form (e.g. back to All Invoices, Leads, etc.)
+ * Runs on window.top directly so it survives form iframe destruction in Dynamics 365
  */
 InvoiceAIAgent.startNavigationWatcher = function () {
   try {
-    if (InvoiceAIAgent.watcherInterval) {
-      clearInterval(InvoiceAIAgent.watcherInterval);
+    var topWin = window.top || window;
+
+    // Attach standalone cleanup & checker directly on topWin so it survives iframe destruction
+    topWin.__d365InvoiceCleanup = function () {
+      try {
+        var doc = topWin.document;
+        var fab = doc.getElementById("d365-invoice-ai-fab");
+        var drawer = doc.getElementById("d365-invoice-ai-drawer");
+        if (fab && fab.parentNode) fab.parentNode.removeChild(fab);
+        if (drawer && drawer.parentNode) drawer.parentNode.removeChild(drawer);
+      } catch (ex) { }
+    };
+
+    topWin.__isInvoiceActive = function () {
+      try {
+        var href = (topWin.location && topWin.location.href) || "";
+        // If on entity list (grid), return false
+        if (href.indexOf("pagetype=entitylist") !== -1) return false;
+        // If explicitly navigated to other entities (Lead, Account, Contact, Opportunity)
+        if (href.indexOf("etn=lead") !== -1 || href.indexOf("etn=account") !== -1 || href.indexOf("etn=contact") !== -1 || href.indexOf("etn=opportunity") !== -1) {
+          return false;
+        }
+        // Must contain etn=invoice or etn=quote
+        var isInvoice = (href.indexOf("etn=invoice") !== -1) || (href.indexOf("etn=quote") !== -1);
+        if (!isInvoice) return false;
+        return true;
+      } catch (ex) {
+        return false;
+      }
+    };
+
+    // 1. Clear any existing watcher on topWin
+    if (topWin.__d365InvoiceWatcher) {
+      topWin.clearInterval(topWin.__d365InvoiceWatcher);
     }
 
-    InvoiceAIAgent.watcherInterval = setInterval(function () {
+    // 2. Set interval directly ON topWin (so it doesn't get killed when CRM unloads form iframe)
+    topWin.__d365InvoiceWatcher = topWin.setInterval(function () {
       try {
-        if (!InvoiceAIAgent.isInvoiceFormActive()) {
-          // User navigated away to All Invoices, Leads, Contacts, etc. -> Cleanup completely!
-          InvoiceAIAgent.cleanup();
-          clearInterval(InvoiceAIAgent.watcherInterval);
-          InvoiceAIAgent.watcherInterval = null;
+        if (topWin.__isInvoiceActive && !topWin.__isInvoiceActive()) {
+          topWin.__d365InvoiceCleanup();
+          topWin.clearInterval(topWin.__d365InvoiceWatcher);
+          topWin.__d365InvoiceWatcher = null;
         }
-      } catch (ex) { }
-    }, 400);
+      } catch (e) { }
+    }, 300);
 
-    // Also attach to window unload and popstate
-    window.addEventListener("beforeunload", InvoiceAIAgent.cleanup);
-    window.addEventListener("unload", InvoiceAIAgent.cleanup);
+    // 3. Hook into Dynamics 365 History navigation (pushState & replaceState) for instant 0ms cleanup
+    if (!topWin.__d365NavHooked) {
+      topWin.__d365NavHooked = true;
+      var origPushState = topWin.history.pushState;
+      topWin.history.pushState = function () {
+        var ret = origPushState.apply(this, arguments);
+        try {
+          if (topWin.__isInvoiceActive && !topWin.__isInvoiceActive()) {
+            if (topWin.__d365InvoiceCleanup) topWin.__d365InvoiceCleanup();
+          }
+        } catch (e) { }
+        return ret;
+      };
 
-    try {
-      var topWin = window.top || window;
-      topWin.addEventListener("popstate", function () {
-        if (!InvoiceAIAgent.isInvoiceFormActive()) {
-          InvoiceAIAgent.cleanup();
-        }
-      });
-      topWin.addEventListener("hashchange", function () {
-        if (!InvoiceAIAgent.isInvoiceFormActive()) {
-          InvoiceAIAgent.cleanup();
-        }
-      });
-    } catch (eTop) { }
-  } catch (e) { }
+      var origReplaceState = topWin.history.replaceState;
+      topWin.history.replaceState = function () {
+        var ret = origReplaceState.apply(this, arguments);
+        try {
+          if (topWin.__isInvoiceActive && !topWin.__isInvoiceActive()) {
+            if (topWin.__d365InvoiceCleanup) topWin.__d365InvoiceCleanup();
+          }
+        } catch (e) { }
+        return ret;
+      };
+    }
+
+    // 4. Also listen to hashchange and popstate
+    topWin.addEventListener("popstate", function () {
+      if (topWin.__isInvoiceActive && !topWin.__isInvoiceActive()) {
+        if (topWin.__d365InvoiceCleanup) topWin.__d365InvoiceCleanup();
+      }
+    });
+    topWin.addEventListener("hashchange", function () {
+      if (topWin.__isInvoiceActive && !topWin.__isInvoiceActive()) {
+        if (topWin.__d365InvoiceCleanup) topWin.__d365InvoiceCleanup();
+      }
+    });
+
+  } catch (e) {
+    console.warn("Could not setup top window navigation watcher:", e);
+  }
 };
 
 /**
@@ -202,6 +263,13 @@ InvoiceAIAgent.getContext = function (primaryControl, selectedControl) {
 
       var amtAttr = fc.getAttribute("totalamount");
       if (amtAttr && amtAttr.getValue()) totalAmount = amtAttr.getValue();
+
+      var dueAttr = fc.getAttribute("duedate");
+      var dueDate = "";
+      if (dueAttr && dueAttr.getValue()) {
+        var d = dueAttr.getValue();
+        dueDate = (d instanceof Date) ? d.toISOString().split("T")[0] : String(d);
+      }
     }
   } catch (ex) {
     console.warn("Could not extract invoice/quote context:", ex);
@@ -220,6 +288,7 @@ InvoiceAIAgent.getContext = function (primaryControl, selectedControl) {
     recordName: recordName,
     customerName: customerName,
     totalAmount: totalAmount,
+    dueDate: dueDate,
     entityName: entityName
   };
 };
@@ -249,6 +318,7 @@ InvoiceAIAgent.openDrawer = function (primaryControl, selectedControl) {
       "&name=" + encodeURIComponent(ctx.recordName || "") +
       "&customer=" + encodeURIComponent(ctx.customerName || "") +
       "&total=" + encodeURIComponent(ctx.totalAmount || "") +
+      "&duedate=" + encodeURIComponent(ctx.dueDate || "") +
       "&type=" + encodeURIComponent(ctx.entityName || "invoice");
 
     if (frame && (!frame.src || frame.src === "about:blank" || (ctx.recordId && !frame.src.includes(ctx.recordId)))) {
@@ -375,7 +445,7 @@ InvoiceAIAgent.initUI = function () {
       </svg>
     `;
 
-    // Apply Styles (Emerald / Teal gradient matching Invoice theme)
+    // Apply Styles (Indigo gradient matching Send button & primary theme)
     Object.assign(fab.style, {
       position: "fixed",
       bottom: "26px",
@@ -383,8 +453,8 @@ InvoiceAIAgent.initUI = function () {
       width: "54px",
       height: "54px",
       borderRadius: "50%",
-      background: "linear-gradient(135deg, #0d9488 0%, #10b981 50%, #059669 100%)",
-      boxShadow: "0 6px 20px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(0,0,0,0.18)",
+      background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)",
+      boxShadow: "0 6px 20px rgba(79, 70, 229, 0.45), 0 2px 6px rgba(0,0,0,0.18)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -397,11 +467,11 @@ InvoiceAIAgent.initUI = function () {
 
     fab.onmouseenter = function () {
       fab.style.transform = "scale(1.1) translateY(-2px)";
-      fab.style.boxShadow = "0 10px 28px rgba(16, 185, 129, 0.55), 0 4px 10px rgba(0,0,0,0.22)";
+      fab.style.boxShadow = "0 10px 28px rgba(79, 70, 229, 0.55), 0 4px 10px rgba(0,0,0,0.22)";
     };
     fab.onmouseleave = function () {
       fab.style.transform = "scale(1) translateY(0px)";
-      fab.style.boxShadow = "0 6px 20px rgba(16, 185, 129, 0.45), 0 2px 6px rgba(0,0,0,0.18)";
+      fab.style.boxShadow = "0 6px 20px rgba(79, 70, 229, 0.45), 0 2px 6px rgba(0,0,0,0.18)";
     };
     fab.onmousedown = function () {
       fab.style.transform = "scale(0.95)";
@@ -432,7 +502,7 @@ InvoiceAIAgent.initUI = function () {
       maxHeight: "calc(100vh - 120px)",
       backgroundColor: "#ffffff",
       borderRadius: "16px",
-      boxShadow: "0 14px 44px rgba(15, 23, 42, 0.25), 0 4px 14px rgba(16, 185, 129, 0.15)",
+      boxShadow: "0 14px 44px rgba(15, 23, 42, 0.25), 0 4px 14px rgba(79, 70, 229, 0.15)",
       border: "1px solid rgba(226, 232, 240, 0.9)",
       overflow: "hidden",
       zIndex: "9999998",
@@ -479,6 +549,8 @@ if (typeof window !== "undefined") {
   if (InvoiceAIAgent.isInvoiceFormActive()) {
     InvoiceAIAgent.initUI();
     InvoiceAIAgent.startNavigationWatcher();
+  } else {
+    InvoiceAIAgent.cleanup();
   }
 }
 

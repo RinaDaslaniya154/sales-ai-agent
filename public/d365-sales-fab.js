@@ -1,20 +1,26 @@
 /**
  * Dynamics 365 Floating Action Button (FAB) & Floating Drawer for Sales AI Agent
- * - Single modern Floating Action Button (✨) at bottom-right (Image 1 style)
+ * - Single modern Floating Action Button (✨) at bottom-right
  * - Click once -> Smoothly opens the Sales AI Agent Floating Drawer
  * - Click again or click Close (✕) -> Closes the Drawer
- * - Supports Standard Form View & Split Screen / Focused View (pagetype=entitylist or entityrecord)
- * - AUTO-CLEANUP: Only removes button when user leaves Lead (navigates to Quotes, Invoices, Accounts, etc.)
- * - Automatically passes current Lead record context (ID, Name, Company)
+ * - Fully supports Standard Form View & Split Screen / Focused View (pagetype=entitylist or entityrecord)
+ * - LIVE RE-BINDING: Re-binds click handlers on every lead click in Focused View to prevent dead buttons
+ * - AUTO-REFRESH CONTEXT: When switching leads with drawer open, dynamically reloads drawer with current lead
+ * - AUTO-CLEANUP: Removes button when user leaves Lead (navigates to Quotes, Invoices, Accounts, etc.)
+ * - AUTO-PURGE: Cleans up any leftover Invoice UI from the screen
  */
 
-var SalesAIAgent = window.SalesAIAgent || {};
+var topWin = (typeof window !== "undefined" && window.top) ? window.top : (typeof window !== "undefined" ? window : globalThis);
+var SalesAIAgent = topWin.__SalesAIAgent || window.SalesAIAgent || {};
+topWin.__SalesAIAgent = SalesAIAgent;
+if (typeof window !== "undefined") {
+  window.SalesAIAgent = SalesAIAgent;
+}
 
-// Permanent Cloud Live URL for Sales AI Agent Widget (Render.com)
-SalesAIAgent.WIDGET_URL = "https://sales-ai-agent-sfn2.onrender.com/widget";
+// Active Cloudflare Tunnel Live URL for Sales AI Agent Widget (Superfast Local Server)
+SalesAIAgent.WIDGET_URL = "https://trio-weblogs-medicare-scout.trycloudflare.com/widget";
 
 SalesAIAgent.currentFormContext = null;
-SalesAIAgent.watcherInterval = null;
 
 /**
  * Dynamics 365 Form OnLoad Event Handler
@@ -23,15 +29,32 @@ SalesAIAgent.onLoad = function (executionContext) {
   try {
     if (executionContext && executionContext.getFormContext) {
       SalesAIAgent.currentFormContext = executionContext.getFormContext();
+      topWin.__currentLeadFormContext = SalesAIAgent.currentFormContext;
     }
 
-    // 1. Close any legacy native side pane if opened previously
+    // 1. Instantly remove any leftover Invoice AI UI if present
+    SalesAIAgent.purgeInvoiceUI();
+
+    // 2. Check if we are active on Lead
+    if (!SalesAIAgent.isLeadActive()) {
+      SalesAIAgent.cleanup();
+      return;
+    }
+
+    // 3. Close legacy native side pane if opened previously
     SalesAIAgent.closeNativeSidePane();
 
-    // 2. Inject or show floating button & popup drawer for Lead
+    // 4. Inject or re-bind floating button & popup drawer for Lead
     SalesAIAgent.initUI();
 
-    // 3. Start navigation watcher to clean up only when user leaves Lead entity
+    // 5. If drawer is currently open, dynamically update iframe with this new lead!
+    var targetDoc = topWin.document || document;
+    var drawer = targetDoc.getElementById("d365-sales-ai-drawer");
+    if (drawer && drawer.getAttribute("data-open") === "true") {
+      SalesAIAgent.refreshDrawerContext();
+    }
+
+    // 6. Start top-level navigation watcher
     SalesAIAgent.startNavigationWatcher();
   } catch (err) {
     console.error("Error in SalesAIAgent.onLoad:", err);
@@ -39,26 +62,38 @@ SalesAIAgent.onLoad = function (executionContext) {
 };
 
 /**
+ * Instantly purge any Invoice AI UI lingering on screen
+ */
+SalesAIAgent.purgeInvoiceUI = function () {
+  try {
+    var targetDoc = topWin.document || document;
+    var oldInvoiceFab = targetDoc.getElementById("d365-invoice-ai-fab");
+    var oldInvoiceDrawer = targetDoc.getElementById("d365-invoice-ai-drawer");
+    if (oldInvoiceFab && oldInvoiceFab.parentNode) oldInvoiceFab.parentNode.removeChild(oldInvoiceFab);
+    if (oldInvoiceDrawer && oldInvoiceDrawer.parentNode) oldInvoiceDrawer.parentNode.removeChild(oldInvoiceDrawer);
+  } catch (e) { }
+};
+
+/**
  * Check if the active screen is still a Lead
  */
 SalesAIAgent.isLeadActive = function () {
   try {
-    var topWin = window.top || window;
     var href = (topWin.location && topWin.location.href) || "";
 
-    // If URL explicitly points to another entity like Quotes or Invoices, then user has left Lead!
+    // If URL explicitly points to another entity like Quotes or Invoices, then user left Lead!
     if (href.indexOf("etn=quote") !== -1 || href.indexOf("etn=invoice") !== -1 || href.indexOf("etn=account") !== -1) {
       return false;
     }
 
-    // If URL contains etn=lead, Lead is definitely active (both full form and split view)
+    // If URL contains etn=lead, Lead is definitely active (both full form and focused view)
     if (href.indexOf("etn=lead") !== -1) {
       return true;
     }
 
     // Check CRM formContext
-    var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (window.top && window.top.Xrm);
-    var fc = SalesAIAgent.currentFormContext || (xrm && xrm.Page);
+    var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (topWin && topWin.Xrm);
+    var fc = SalesAIAgent.currentFormContext || topWin.__currentLeadFormContext || (xrm && xrm.Page);
     if (fc && fc.data && fc.data.entity) {
       return fc.data.entity.getEntityName() === "lead";
     }
@@ -74,7 +109,7 @@ SalesAIAgent.isLeadActive = function () {
  */
 SalesAIAgent.cleanup = function () {
   try {
-    var targetDoc = window.top.document || document;
+    var targetDoc = topWin.document || document;
     var fab = targetDoc.getElementById("d365-sales-ai-fab");
     if (fab && fab.parentNode) {
       fab.parentNode.removeChild(fab);
@@ -83,32 +118,63 @@ SalesAIAgent.cleanup = function () {
     if (drawer && drawer.parentNode) {
       drawer.parentNode.removeChild(drawer);
     }
+    if (topWin.__d365SalesWatcher) {
+      topWin.clearInterval(topWin.__d365SalesWatcher);
+      topWin.__d365SalesWatcher = null;
+    }
   } catch (e) { }
 };
 
 /**
- * Navigation Watcher: Monitors when user leaves Lead entity
+ * Top-level Navigation Watcher: Monitors when user leaves Lead entity
  */
 SalesAIAgent.startNavigationWatcher = function () {
   try {
-    if (SalesAIAgent.watcherInterval) {
-      clearInterval(SalesAIAgent.watcherInterval);
+    topWin.__d365SalesCleanup = SalesAIAgent.cleanup;
+    topWin.__isLeadStillActive = SalesAIAgent.isLeadActive;
+
+    if (topWin.__d365SalesWatcher) {
+      topWin.clearInterval(topWin.__d365SalesWatcher);
     }
 
-    SalesAIAgent.watcherInterval = setInterval(function () {
+    topWin.__d365SalesWatcher = topWin.setInterval(function () {
       try {
         if (!SalesAIAgent.isLeadActive()) {
-          // User navigated away to Quotes, Invoices, etc. -> Cleanup!
           SalesAIAgent.cleanup();
-          clearInterval(SalesAIAgent.watcherInterval);
-          SalesAIAgent.watcherInterval = null;
+          topWin.clearInterval(topWin.__d365SalesWatcher);
+          topWin.__d365SalesWatcher = null;
         }
       } catch (ex) { }
-    }, 600);
+    }, 400);
 
-    // Also attach to window unload
-    window.addEventListener("beforeunload", SalesAIAgent.cleanup);
-    window.addEventListener("unload", SalesAIAgent.cleanup);
+    // Hook into Dynamics 365 History navigation for instant cleanup when navigating away
+    if (!topWin.__d365SalesNavHooked) {
+      topWin.__d365SalesNavHooked = true;
+      var origPush = topWin.history.pushState;
+      topWin.history.pushState = function () {
+        var ret = origPush.apply(this, arguments);
+        try {
+          if (!SalesAIAgent.isLeadActive()) SalesAIAgent.cleanup();
+        } catch (e) { }
+        return ret;
+      };
+
+      var origReplace = topWin.history.replaceState;
+      topWin.history.replaceState = function () {
+        var ret = origReplace.apply(this, arguments);
+        try {
+          if (!SalesAIAgent.isLeadActive()) SalesAIAgent.cleanup();
+        } catch (e) { }
+        return ret;
+      };
+
+      topWin.addEventListener("popstate", function () {
+        if (!SalesAIAgent.isLeadActive()) SalesAIAgent.cleanup();
+      });
+      topWin.addEventListener("hashchange", function () {
+        if (!SalesAIAgent.isLeadActive()) SalesAIAgent.cleanup();
+      });
+    }
   } catch (e) { }
 };
 
@@ -117,7 +183,7 @@ SalesAIAgent.startNavigationWatcher = function () {
  */
 SalesAIAgent.closeNativeSidePane = function () {
   try {
-    var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (window.top && window.top.Xrm);
+    var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (topWin && topWin.Xrm);
     if (xrm && xrm.App && xrm.App.sidePanes) {
       var pane = xrm.App.sidePanes.getPane("SalesAIAgentSidePane");
       if (pane) pane.close();
@@ -129,13 +195,16 @@ SalesAIAgent.closeNativeSidePane = function () {
  * Extract active Lead context (ID, Full Name, Company) from form
  */
 SalesAIAgent.getLeadContext = function () {
-  var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (window.top && window.top.Xrm);
+  var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (topWin && topWin.Xrm);
   var leadId = "";
   var leadName = "";
   var company = "";
 
   try {
-    var fc = SalesAIAgent.currentFormContext || (xrm && xrm.Page && xrm.Page.data ? xrm.Page : null);
+    var fc = SalesAIAgent.currentFormContext ||
+             topWin.__currentLeadFormContext ||
+             (xrm && xrm.Page && xrm.Page.data ? xrm.Page : null);
+
     if (fc && fc.data && fc.data.entity) {
       var rawId = fc.data.entity.getId();
       if (rawId) leadId = rawId.replace(/[{}]/g, "");
@@ -146,6 +215,14 @@ SalesAIAgent.getLeadContext = function () {
       var compAttr = fc.getAttribute("companyname");
       if (compAttr && compAttr.getValue()) company = compAttr.getValue();
     }
+
+    // Fallback: check UCI page context if not found
+    if (!leadId && xrm && xrm.Utility && xrm.Utility.getPageContext) {
+      var pageCtx = xrm.Utility.getPageContext();
+      if (pageCtx && pageCtx.input && pageCtx.input.entityId) {
+        leadId = pageCtx.input.entityId.replace(/[{}]/g, "");
+      }
+    }
   } catch (ex) {
     console.warn("Could not extract lead context:", ex);
   }
@@ -154,11 +231,34 @@ SalesAIAgent.getLeadContext = function () {
 };
 
 /**
+ * Refresh the drawer's iframe src with current Lead context
+ */
+SalesAIAgent.refreshDrawerContext = function () {
+  try {
+    var targetDoc = topWin.document || document;
+    var frame = targetDoc.getElementById("d365-sales-ai-frame");
+    if (!frame) return;
+
+    var ctx = SalesAIAgent.getLeadContext();
+    var targetUrl = SalesAIAgent.WIDGET_URL +
+      "?id=" + encodeURIComponent(ctx.leadId) +
+      "&leadname=" + encodeURIComponent(ctx.leadName) +
+      "&company=" + encodeURIComponent(ctx.company);
+
+    if (frame.src !== targetUrl && (!frame.src.includes(ctx.leadId) || !ctx.leadId)) {
+      frame.src = targetUrl;
+    }
+  } catch (e) {
+    console.error("Error in refreshDrawerContext:", e);
+  }
+};
+
+/**
  * Toggle the Floating Drawer
  */
 SalesAIAgent.toggleDrawer = function () {
   try {
-    var targetDoc = window.top.document || document;
+    var targetDoc = topWin.document || document;
     var drawer = targetDoc.getElementById("d365-sales-ai-drawer");
     var fab = targetDoc.getElementById("d365-sales-ai-fab");
     if (!drawer) return;
@@ -168,19 +268,10 @@ SalesAIAgent.toggleDrawer = function () {
     drawer.setAttribute("data-open", willOpen ? "true" : "false");
 
     if (willOpen) {
-      // Refresh iframe URL with current lead context
-      var ctx = SalesAIAgent.getLeadContext();
-      var frame = targetDoc.getElementById("d365-sales-ai-frame");
-      var targetUrl = SalesAIAgent.WIDGET_URL +
-        "?id=" + encodeURIComponent(ctx.leadId) +
-        "&leadname=" + encodeURIComponent(ctx.leadName) +
-        "&company=" + encodeURIComponent(ctx.company);
+      // 1. Ensure iframe points to the current active lead
+      SalesAIAgent.refreshDrawerContext();
 
-      if (frame && (!frame.src || frame.src === "about:blank" || !frame.src.includes(ctx.leadId))) {
-        frame.src = targetUrl;
-      }
-
-      // Show Drawer
+      // 2. Show Drawer
       drawer.style.display = "flex";
       setTimeout(function () {
         drawer.style.opacity = "1";
@@ -188,7 +279,7 @@ SalesAIAgent.toggleDrawer = function () {
         drawer.style.pointerEvents = "auto";
       }, 10);
 
-      // Transform FAB icon to Close (✕)
+      // 3. Transform FAB icon to Close (✕)
       if (fab) {
         fab.innerHTML = `
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -230,14 +321,30 @@ SalesAIAgent.toggleDrawer = function () {
  */
 SalesAIAgent.initUI = function () {
   try {
-    var targetDoc = window.top.document || document;
+    var targetDoc = topWin.document || document;
 
     var existingFab = targetDoc.getElementById("d365-sales-ai-fab");
     var existingDrawer = targetDoc.getElementById("d365-sales-ai-drawer");
 
-    // If elements already exist, ensure they are visible and reset
+    // CRITICAL FIX: If elements already exist, ALWAYS RE-BIND ONCLICK to prevent dead handlers!
     if (existingFab && existingDrawer) {
       existingFab.style.display = "flex";
+
+      // Re-bind fresh click handler on existing FAB
+      existingFab.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        var agent = topWin.__SalesAIAgent || SalesAIAgent;
+        agent.toggleDrawer();
+      };
+
+      // Also ensure hover effects work properly
+      existingFab.onmouseenter = function () {
+        existingFab.style.transform = "scale(1.1) translateY(-2px)";
+      };
+      existingFab.onmouseleave = function () {
+        existingFab.style.transform = "scale(1) translateY(0px)";
+      };
+
       return;
     }
 
@@ -286,8 +393,9 @@ SalesAIAgent.initUI = function () {
     };
 
     fab.onclick = function (e) {
-      e.stopPropagation();
-      SalesAIAgent.toggleDrawer();
+      if (e && e.stopPropagation) e.stopPropagation();
+      var agent = topWin.__SalesAIAgent || SalesAIAgent;
+      agent.toggleDrawer();
     };
 
     // 2. Create Floating Drawer Container
@@ -342,5 +450,11 @@ SalesAIAgent.initUI = function () {
 // Auto-run if script is evaluated
 if (typeof window !== "undefined") {
   SalesAIAgent.closeNativeSidePane();
-  SalesAIAgent.initUI();
+  SalesAIAgent.purgeInvoiceUI();
+  if (SalesAIAgent.isLeadActive()) {
+    SalesAIAgent.initUI();
+    SalesAIAgent.startNavigationWatcher();
+  } else {
+    SalesAIAgent.cleanup();
+  }
 }

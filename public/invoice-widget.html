@@ -726,13 +726,14 @@
   </div>
 
   <script>
-    // Context State
-    let activeEntity = 'invoice'; // Default to invoice
+    // Context State (Populated dynamically from Dynamics 365)
+    let activeEntity = 'invoice';
     let activeRecordId = '';
-    let activeRecordName = 'Sales Invoice - Rina Patel';
-    let activeCustomer = 'Rina Patel';
-    let activeEmail = 'Rina@Webtual.com';
-    let activeAmount = '₹29,500';
+    let activeRecordName = '';
+    let activeCustomer = '';
+    let activeEmail = '';
+    let activeAmount = '';
+    let activeDueDate = '';
 
     const chatArea = document.getElementById('chatArea');
     const userInput = document.getElementById('userInput');
@@ -747,10 +748,28 @@
       // 1. Check URL parameters of the widget itself
       const urlParams = new URLSearchParams(window.location.search);
       let detectedId = urlParams.get('id') || urlParams.get('ID') || urlParams.get('quoteid') || urlParams.get('invoiceid') || urlParams.get('Id');
+      if (urlParams.get('name')) activeRecordName = urlParams.get('name');
+      if (urlParams.get('customer')) activeCustomer = urlParams.get('customer');
+      if (urlParams.get('email')) activeEmail = urlParams.get('email');
+      if (urlParams.get('duedate')) activeDueDate = urlParams.get('duedate');
+      if (urlParams.get('type')) activeEntity = urlParams.get('type').toLowerCase();
+      if (urlParams.get('total')) {
+        const rawTotal = urlParams.get('total');
+        activeAmount = rawTotal ? ('₹' + Number(rawTotal).toLocaleString('en-IN')) : '';
+      }
       if (!detectedId && urlParams.get('data')) {
         try {
           const dataParams = new URLSearchParams(urlParams.get('data'));
-          detectedId = dataParams.get('id') || dataParams.get('ID') || dataParams.get('quoteid');
+          detectedId = dataParams.get('id') || dataParams.get('ID') || dataParams.get('quoteid') || dataParams.get('invoiceid');
+          if (dataParams.get('name')) activeRecordName = dataParams.get('name');
+          if (dataParams.get('customer')) activeCustomer = dataParams.get('customer');
+          if (dataParams.get('email')) activeEmail = dataParams.get('email');
+          if (dataParams.get('duedate')) activeDueDate = dataParams.get('duedate');
+          if (dataParams.get('type')) activeEntity = dataParams.get('type').toLowerCase();
+          if (dataParams.get('total')) {
+            const rawTot = dataParams.get('total');
+            activeAmount = rawTot ? ('₹' + Number(rawTot).toLocaleString('en-IN')) : '';
+          }
         } catch (e) { }
       }
 
@@ -813,10 +832,11 @@
         `;
       } else {
         quickChips.innerHTML = `
+          <div class="chip" onclick="openConvertModal()" style="font-weight: 600; background: linear-gradient(135deg, #0d9488 0%, #10b981 100%); color: #ffffff; border: none; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);">⚡ Convert Quote</div>
           <div class="chip" onclick="sendQuickPrompt('Preview PDF')">📄 Preview PDF</div>
           <div class="chip" onclick="openEmailModal()">📧 Email Client</div>
           <div class="chip" onclick="sendQuickPrompt('Mark as Paid')">✅ Mark Paid</div>
-          <div class="chip" onclick="sendQuickPrompt('Send payment reminder')">⏰ Remind Payment</div>
+          <div class="chip" onclick="sendQuickPrompt('Check pending payment and overdue balance')">💰 Check Due</div>
           <div class="chip" onclick="sendQuickPrompt('Audit tax and GST compliance')">🔍 Tax Audit</div>
         `;
       }
@@ -845,6 +865,7 @@
               recordName: activeRecordName,
               customerName: activeCustomer,
               totalAmount: activeAmount,
+              dueDate: activeDueDate,
               email: activeEmail
             }
           })
@@ -997,7 +1018,11 @@
       const dueDate = document.getElementById('convDueDate').value;
       closeModal('convertModal');
 
-      sendQuickPrompt(`Convert this quote to tax invoice for ${name} (${email}) with ${discount}% discount due on ${dueDate}`);
+      if (name) {
+        sendQuickPrompt(`Create an invoice based on ${name}’s quotation`);
+      } else {
+        sendQuickPrompt(`Convert quotation to tax invoice`);
+      }
     }
 
     function openEmailModal(defaultEmail, defaultName) {

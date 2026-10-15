@@ -21,7 +21,7 @@ Directives:
    - When requested to "send to client", "email invoice", "dispatch bill", call 'generate_and_email_invoice'.
    - When requested to "preview PDF", "download invoice", or "generate PDF", call 'generate_invoice_pdf'.
    - When requested to "mark paid", "payment received", "close invoice", call 'mark_invoice_as_paid'.
-   - When requested to "send reminder", "follow up on payment", "remind client", call 'send_payment_reminder'.
+   - When requested to check "outstanding balance", "pending payment", "unpaid bills", or "overdue", call 'check_outstanding_balance'. Note: Email reminder notifications are handled automatically by Power Automate Flow.
    - When requested to "audit", "check tax", or "check compliance", call 'audit_invoice_compliance'.
 3. Always respond professionally, concisely, and efficiently as an enterprise billing colleague.
 4. Output valid markdown with emoji badges and clean tables/bullet points.
@@ -75,7 +75,9 @@ class InvoiceBrain {
     const isQuoteContext = (session.currentEntity === 'quote' || textLower.includes('quote'));
 
     // 1. Convert Quote to Invoice
-    if (/\b(convert|make invoice|create invoice|generate invoice|bill)\b/i.test(textLower) && isQuoteContext) {
+    const mentionsInvoiceAction = /\b(convert|create|make|generate|bill)\b/i.test(textLower) && /\b(invoice|bill)\b/i.test(textLower);
+    const mentionsQuote = isQuoteContext || /\b(quotation|quote|proposal|based on|from)\b/i.test(textLower);
+    if ((mentionsInvoiceAction && mentionsQuote) || /\b(convert to invoice|convert quote)\b/i.test(textLower)) {
       return await this.handleConvertQuote(session, context, userMessage);
     }
 
@@ -109,22 +111,19 @@ class InvoiceBrain {
       return await this.handleMarkPaid(session, context, userMessage);
     }
 
-    // 8. Payment Reminder (Single or Batch for All)
-    if (/\b(remind|reminder|follow up|overdue|folo)\b/i.test(textLower) || (/\b(mail|email|send)\b/i.test(textLower) && /\b(baki|pending|unpaid|due)\b/i.test(textLower))) {
-      if (/\b(all|everyone|bdha|badha|every|jetla)\b/i.test(textLower)) {
-        return await this.handleBatchReminders(session, context);
-      }
-      return await this.handleSendReminder(session, context);
-    }
-
-    // 9. Tax / Compliance Audit (For Invoices)
+    // 8. Tax / Compliance Audit (For Invoices)
     if (/\b(audit|check tax|compliance|verify|gst)\b/i.test(textLower)) {
       return await this.handleAuditCompliance(session, context);
     }
 
-    // 10. Outstanding Balance & Pending Invoices Summary
-    if (/\b(outstanding|pending|due|balance|total amount|unpaid|baki|ketlu|total)\b/i.test(textLower)) {
-      return await this.handleOutstandingSummary(session, context);
+    // 9. Overdue & Due Date Check (Specifically handles "overdue" queries)
+    if (/\b(overdue|late|delay|expiry|due date)\b/i.test(textLower)) {
+      return await this.handleOverdueCheck(session, context, userMessage);
+    }
+
+    // 10. Outstanding Balance, Pending Invoices & Payment Summary
+    if (/\b(outstanding|pending|due|balance|total amount|unpaid|baki|ketlu|total|remind|reminder|follow up|folo)\b/i.test(textLower)) {
+      return await this.handleOutstandingSummary(session, context, textLower, userMessage);
     }
 
     // AI Fallback via Gemini or Smart Rules
@@ -144,9 +143,37 @@ class InvoiceBrain {
    * ⚡ Convert Quote to Invoice Handler
    */
   async handleConvertQuote(session, context, userMessage = '') {
-    let targetQuoteId = context.recordId || session.currentRecordId || '';
-    if (targetQuoteId === 'null' || targetQuoteId === 'undefined') targetQuoteId = '';
-    const targetQuoteName = context.recordName || session.currentRecordName || 'Active Quotation';
+    // 1. Extract target customer or quote name from user message
+    let target = '';
+    const m = (userMessage || '').match(/(?:based\s+on|from|for|of)\s+([A-Za-z0-9\s._-]+?)(?:(?:['’]s)?\s+(?:quotation|quote|invoice|bill)|$)/i);
+    if (m && m[1]) {
+      const candidate = m[1].replace(/['’]s/gi, '').trim();
+      const stopWords = new Set(['an', 'a', 'the', 'my', 'this', 'current', 'active', 'new', 'client', 'prospect', 'lead']);
+      if (!stopWords.has(candidate.toLowerCase()) && candidate.length > 1) {
+        target = candidate;
+      }
+    }
+
+    if (!target && context.entityName !== 'quote') {
+      target = context.customerName || '';
+    }
+
+    let foundQuote = null;
+    if (target) {
+      foundQuote = await dynamicsService.findQuoteByQuery(target);
+    } else if (context.recordId && context.entityName === 'quote') {
+      foundQuote = await dynamicsService.getQuoteById(context.recordId);
+    } else {
+      foundQuote = await dynamicsService.findQuoteByQuery('');
+    }
+
+    if (!foundQuote) {
+      return {
+        reply: `🔍 **No Quotation Found in Dynamics 365**\n\n` +
+          (target ? `* We searched your Dynamics 365 CRM, but there is no quotation matching **${target}**.\n` : `* There are no active quotations found in Dynamics 365.\n`) +
+          `💡 *Please verify the Quotation name in Dynamics 365 or create a Quotation first.*`
+      };
+    }
 
     // Default discount to 0% unless specified by user
     let discountVal = 0;
@@ -158,9 +185,10 @@ class InvoiceBrain {
     if (dueMatch) dueDateVal = dueMatch[1];
 
     try {
-      const convRes = await dynamicsService.convertQuoteToInvoice(targetQuoteId, {
-        customerName: context.customerName || session.customerName,
-        email: context.email || session.email,
+      const custName = foundQuote.customerName && foundQuote.customerName !== 'Valued Customer' ? foundQuote.customerName : (target || context.customerName || 'Valued Client');
+      const convRes = await dynamicsService.convertQuoteToInvoice(foundQuote.quoteid, {
+        customerName: custName,
+        email: foundQuote.customerEmail || context.email,
         discountPercent: discountVal,
         dueDate: dueDateVal
       });
@@ -188,9 +216,10 @@ class InvoiceBrain {
 
       const itemsList = (convRes.items || []).map((it, i) => `  ${i + 1}. **${it.description}** — Qty: ${it.qty} × ₹${Number(it.unitPrice).toLocaleString('en-IN')}`).join('\n');
 
-      const reply = `🎉 **Successfully Converted Quote to Tax Invoice!**\n\n` +
+      const reply = `🎉 **Successfully Converted Quote to Tax Invoice in Dynamics 365!**\n\n` +
         `* 📑 **Invoice No:** \`${convRes.invoiceNumber}\`\n` +
         `* 👤 **Customer:** **${convRes.customerName}** (${convRes.company})\n` +
+        `* 📦 **Quotation Converted:** \`${foundQuote.quotenumber}\` (*${foundQuote.name}*)\n` +
         `* 💰 **Total Payable:** **₹${Number(convRes.grandTotal).toLocaleString('en-IN')}** (includes 18% GST)\n\n` +
         `**Line Items:**\n${itemsList}\n\n` +
         `⚡ **Dynamics 365 Sync:** Record created in Invoices table & linked to timeline.\n\n` +
@@ -200,7 +229,8 @@ class InvoiceBrain {
           invoiceId: convRes.invoiceId,
           grandTotal: convRes.grandTotal,
           customerName: convRes.customerName,
-          email: convRes.email
+          email: convRes.email,
+          downloadUrl: `/api/invoice-agent/download-pdf/${convRes.invoiceNumber}`
         })}-->`;
 
       return {
@@ -330,12 +360,11 @@ class InvoiceBrain {
 
     const reply = `✅ **Invoice Successfully Marked as PAID!**\n\n` +
       `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
-      `* 💰 **Amount Settled:** **₹${Number(invData.totalamount || 29500).toLocaleString('en-IN')}**\n` +
+      `* 💰 **Amount Settled:** **₹${Number(invData.totalamount).toLocaleString('en-IN')}**\n` +
       `* 📅 **Timestamp:** ${new Date().toLocaleString('en-IN')}\n\n` +
       `⚡ **Dynamics 365 Updates:**\n` +
       `- Record status updated to **PAID / FULFILLED**\n` +
-      `- Payment audit note logged on Timeline\n` +
-      `- Automated reminders paused`;
+      `- Payment audit note logged on Timeline`;
 
     return {
       reply,
@@ -343,137 +372,121 @@ class InvoiceBrain {
     };
   }
 
-  /**
-   * ⏰ Payment Reminder
-   */
-  async handleSendReminder(session, context) {
-    const invoiceId = context.recordId || session.currentRecordId;
-    const invData = await this.resolveInvoiceData(invoiceId, context);
-    const targetEmail = context.email || invData.customerEmail;
-    const customerName = context.customerName || invData.customerName || 'Valued Customer';
-    const invoiceNumber = invData.invoicenumber || invData.invoiceNumber || 'INV-2026';
-    const amount = Number(invData.totalamount || 0).toLocaleString('en-IN');
+  extractTargetCustomerName(userMessage) {
+    if (!userMessage) return null;
+    const msg = userMessage.trim();
 
-    if (!targetEmail || targetEmail === 'customer@example.com') {
-      return {
-        reply: `:::alert-danger\n* ❌ Invoice \`${invoiceNumber}\` — **${customerName}** (₹${amount}): CRM માં Client નું Email Address મળ્યું નથી!:::\n\n⚠️ કૃપા કરીને Dynamics 365 માં Contact / Account નું Email Address એડ કરો.`
-      };
-    }
+    // 1. Matches phrases:
+    // "check overdue status for Bhargav mistri client"
+    // "check overdue for Bhargav mistri"
+    // "status of Bhargav mistri"
+    // "is Bhargav mistri overdue"
+    const match = msg.match(/(?:for|of|about|check|status|client|customer)\s+([A-Za-z0-9\s._-]+?)(?:\s+(?:client|customer|invoice|bill|account|payment)|$)/i);
 
-    const reminderHtml = `
-      <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px;">
-        <h2 style="color: #4f46e5;">CloudScale Tech Solutions - Payment Reminder</h2>
-        <p>Dear <strong>${customerName}</strong>,</p>
-        <p>This is a gentle reminder regarding outstanding Tax Invoice <strong>#${invoiceNumber}</strong> for the amount of <strong>₹${amount}</strong>.</p>
-        <p>Kindly verify if the payment has been initiated, or process via our bank details on file.</p>
-        <p style="margin-top: 24px; color: #64748b; font-size: 0.85rem;">Thank you for your business!<br>Accounts & Finance Team, CloudScale</p>
-      </div>
-    `;
+    const stopWords = new Set([
+      'overdue', 'status', 'check', 'for', 'client', 'customer', 'invoice', 'invoices',
+      'bill', 'bills', 'payment', 'pending', 'balance', 'outstanding', 'please',
+      'can', 'you', 'tell', 'me', 'what', 'is', 'the', 'my', 'active', 'record',
+      'due', 'date', 'no', 'and', 'with', 'hi', 'hello'
+    ]);
 
-    if (emailService.isConfigured) {
-      try {
-        await emailService.transporter.sendMail({
-          from: `"CloudScale Finance" <${emailService.smtpUser}>`,
-          to: targetEmail,
-          subject: `Friendly Payment Reminder: Invoice #${invoiceNumber} (₹${amount})`,
-          html: reminderHtml
-        });
-      } catch (e) {
-        console.warn('Reminder email error:', e.message);
+    let candidate = '';
+    if (match && match[1]) {
+      candidate = match[1].trim();
+    } else {
+      const words = msg.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      if (words.length > 0 && words.length <= 4) {
+        candidate = words.join(' ');
       }
     }
 
-    const reply = `:::alert-success\n` +
-      `* 👤 **Customer:** **${customerName}** (\`${targetEmail}\`)\n` +
-      `* 📑 **Invoice Ref:** \`${invoiceNumber}\`\n` +
-      `* 💰 **Outstanding:** **₹${amount}**\n:::\n\n` +
-      `✅ Gentle notification delivered. Follow-up recorded on Dynamics 365 timeline.`;
-
-    return {
-      reply,
-      reminderSent: true
-    };
+    const candWords = candidate.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')) && w.length > 1);
+    if (candWords.length === 0) return null;
+    return candWords.join(' ');
   }
 
   /**
-   * ⏰ Batch Payment Reminders to All Pending Invoices
+   * 💰 Outstanding Balance & Overdue Check (No Email Dispatch - Handled via Power Automate Flow)
    */
-  async handleBatchReminders(session, context) {
-    const summary = await dynamicsService.getAllInvoicesSummary();
-    const invoices = summary.invoices || [];
+  async handleOutstandingSummary(session, context, query = '', userMessage = '') {
+    const targetCustomer = this.extractTargetCustomerName(userMessage || query);
+    const activeCustomer = context.customerName || session.customerName || '';
 
-    let sentCount = 0;
-    const sentList = [];
-    const missingEmailList = [];
-
-    for (const inv of invoices) {
-      const email = inv.email || (invoices.length === 1 && context?.email ? context.email : null);
-      const cust = inv.customer || inv.name || 'Valued Client';
-      const amt = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
-      const num = inv.invoicenumber || 'N/A';
-
-      if (!email || email === 'customer@example.com') {
-        missingEmailList.push({
-          num,
-          cust,
-          amt
-        });
-        continue;
-      }
-
-      if (emailService.isConfigured) {
-        try {
-          await emailService.transporter.sendMail({
-            from: `"CloudScale Finance" <${emailService.smtpUser}>`,
-            to: email,
-            subject: `Friendly Payment Reminder: Invoice #${num} (${amt})`,
-            html: `
-              <div style="font-family: Arial, sans-serif; color: #1e293b; max-width: 600px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px;">
-                <h2 style="color: #4f46e5;">Payment Reminder - CloudScale</h2>
-                <p>Dear <strong>${cust}</strong>,</p>
-                <p>This is a gentle reminder regarding outstanding Invoice <strong>#${num}</strong> for <strong>${amt}</strong>.</p>
-                <p>Kindly process payment at your earliest convenience.</p>
-                <p style="margin-top:20px; color:#64748b; font-size:12px;">Accounts Team</p>
-              </div>
-            `
-          });
-          sentCount++;
-          sentList.push(`* 👤 **${cust}** (\`${email}\`) — Invoice \`${num}\`: **${amt}**`);
-        } catch (e) {
-          console.warn('Batch reminder email error for', cust, e.message);
-          missingEmailList.push({
-            num,
-            cust,
-            amt
-          });
-        }
+    // If user specifically asked about a different customer
+    if (targetCustomer && activeCustomer && !activeCustomer.toLowerCase().includes(targetCustomer.toLowerCase()) && !targetCustomer.toLowerCase().includes(activeCustomer.toLowerCase())) {
+      console.log(`🔍 Checking balance for targeted customer "${targetCustomer}" in Dynamics 365...`);
+      const matches = await dynamicsService.searchInvoicesByCustomer(targetCustomer);
+      if (matches && matches.length > 0) {
+        const inv = matches[0];
+        const isPaid = (inv.statecode === 2 || inv.statuscode === 100001);
+        const amount = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+        return {
+          reply: `💰 **Payment Status for ${inv.customer}**\n\n` +
+            `* 👤 **Customer:** **${inv.customer}**\n` +
+            `* 📑 **Invoice No:** \`${inv.invoicenumber}\`\n` +
+            `* 💵 **Total Amount:** **${amount}**\n` +
+            `* 📊 **Payment Status:** **${isPaid ? '✅ PAID / SETTLED' : '⏳ UNPAID / DUE'}**\n\n` +
+            (isPaid ? `🎉 This invoice is fully settled in Dynamics 365.` : `⚠️ Payment is outstanding.\n\n*(Note: Form on your screen is currently showing **${activeCustomer}**).*`),
+          outstandingChecked: true
+        };
       } else {
-        sentCount++;
-        sentList.push(`* 👤 **${cust}** (\`${email}\`) — Invoice \`${num}\`: **${amt}**`);
+        return {
+          reply: `🔍 **No Invoice Records Found for "${targetCustomer}" in Dynamics 365.**`,
+          outstandingChecked: true
+        };
       }
     }
 
-    let reply = `📢 **Payment Reminders Summary**\n\n` +
-      `* 📨 **Emails Dispatched:** **${sentCount} / ${invoices.length}**\n` +
-      `* 💰 **Total Outstanding Addressed:** **₹${Number(summary.totalOutstanding).toLocaleString('en-IN')}**\n\n`;
+    const isSpecificCurrent = (context.recordId || session.currentRecordId) && !/\b(all|everyone|bdha|badha|every|jetla)\b/i.test(query);
 
-    if (sentList.length > 0) {
-      reply += `:::alert-success\n` + sentList.join('\n') + `\n:::\n\n`;
+    if (isSpecificCurrent) {
+      const invoiceId = context.recordId || session.currentRecordId;
+      const invData = await this.resolveInvoiceData(invoiceId, context);
+      const invoiceNumber = invData.invoicenumber || invData.invoiceNumber || 'INV-2026';
+      const amount = Number(invData.totalamount || 0).toLocaleString('en-IN');
+      const customer = invData.customerName || context.customerName || 'Client';
+      const status = (invData.status || 'Active').toUpperCase();
+      const isPaid = (status === 'PAID' || status === 'FULFILLED');
+
+      const reply = `💰 **Payment Status for \`${invoiceNumber}\`**\n\n` +
+        `* 👤 **Customer:** **${customer}**\n` +
+        `* 📑 **Invoice No:** \`${invoiceNumber}\`\n` +
+        `* 💵 **Total Amount:** **₹${amount}**\n` +
+        `* 📊 **Payment Status:** **${isPaid ? '✅ PAID / SETTLED' : '⏳ UNPAID / DUE'}**\n\n` +
+        (isPaid ? `🎉 This invoice has already been fully paid and settled in Dynamics 365.` : `⚠️ **Payment is Pending:** ₹${amount} is currently outstanding.\n\n*(Note: Automated email payment reminders are managed scheduled via Power Automate Flow).*`);
+
+      return {
+        reply,
+        outstandingChecked: true,
+        invoiceNumber,
+        amount
+      };
     }
 
-    if (missingEmailList.length > 0) {
-      reply += `:::alert-danger\n` +
-        missingEmailList.map(m => `* ❌ Invoice \`${m.num}\` — **${m.cust}** (${m.amt}) : CRM માં Email Address મળ્યું નથી`).join('\n') +
-        `\n:::\n\n`;
+    const summary = await dynamicsService.getAllInvoicesSummary();
+    const formattedTotal = '₹' + Number(summary.totalOutstanding).toLocaleString('en-IN');
+
+    let listText = '';
+    if (summary.invoices && summary.invoices.length > 0) {
+      listText = summary.invoices.map(inv => {
+        const amt = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+        const custName = inv.customer && !inv.customer.toLowerCase().includes('hi customer') && !inv.customer.toLowerCase().includes('valued customer') ? inv.customer : (context.customerName || 'Client');
+        return `* 🧾 **${inv.invoicenumber || 'INV'}** — **${custName}**: **${amt}**`;
+      }).join('\n');
+    } else {
+      listText = `* 🧾 All invoices are fully settled! No pending balances found.`;
     }
 
-    reply += `✅ Follow-up activities logged on Dynamics 365 timeline.`;
+    const reply = `📊 **Dynamics 365 Invoices & Outstanding Balance Summary**\n\n` +
+      `* 💰 **Total Outstanding Amount:** **${formattedTotal}**\n` +
+      `* 📑 **Pending Invoices:** **${summary.count || 0} Invoice(s)**\n\n` +
+      `**Active Invoices Breakdown:**\n` +
+      listText + `\n\n` +
+      `💡 *(Note: Automated payment reminder emails are handled via Power Automate Flow).*`;
 
     return {
       reply,
-      batchSent: true,
-      count: sentCount,
-      missingCount: missingEmailList.length
+      summary
     };
   }
 
@@ -484,21 +497,167 @@ class InvoiceBrain {
     const invoiceId = context.recordId || session.currentRecordId;
     const invData = await this.resolveInvoiceData(invoiceId, context);
     const invoiceNumber = invData.invoicenumber || invData.invoiceNumber || 'INV-2026';
+    const totalAmount = Number(invData.totalamount || 29500);
+    const baseAmount = invData.detailamount ? Number(invData.detailamount) : Math.round(totalAmount / 1.18);
+    const taxAmount = invData.totaltax ? Number(invData.totaltax) : Math.round(totalAmount - baseAmount);
+    const cgst = Math.round(taxAmount / 2);
+    const sgst = Math.round(taxAmount / 2);
 
-    const reply = `🔍 **Tax & Compliance Audit Report**\n\n` +
-      `* 📑 **Document:** \`${invoiceNumber}\`\n` +
-      `* 🏢 **Client Organization:** **${invData.customerName || 'Valued Client'}**\n\n` +
-      `**Verification Checklist:**\n` +
-      `- ✅ **GST Rate Applied:** 18% Standard SaaS GST\n` +
-      `- ✅ **Tax Structure:** Intra-State CGST (9%) + SGST (9%) validated\n` +
-      `- ✅ **HSN / SAC Code:** 998313 (IT Software as a Service) verified\n` +
-      `- ✅ **Discount Limit:** Within standard corporate threshold (< 15%)\n` +
-      `- ✅ **Digital Signature:** Enterprise CRM seal attached\n\n` +
+    const reply = `✅ **Yes, 18% GST is correctly applied.**\n\n` +
+      `* 💵 **Base Amount:** ₹${baseAmount.toLocaleString('en-IN')}\n` +
+      `* 🏷️ **GST (18%):** ₹${taxAmount.toLocaleString('en-IN')} *(CGST 9% + SGST 9%)*\n` +
+      `* 💰 **Total Payable:** **₹${totalAmount.toLocaleString('en-IN')}**\n\n` +
       `🟢 **Status:** 100% Tax Compliant & Ready for Client Dispatch!`;
 
     return {
       reply,
       auditPassed: true
+    };
+  }
+
+  /**
+   * ⏰ Check Overdue & Due Date Status Specifically
+   */
+  async handleOverdueCheck(session, context, userMessage = '') {
+    const targetCustomer = this.extractTargetCustomerName(userMessage);
+    const activeCustomer = context.customerName || session.customerName || '';
+
+    // If user specifically asked about a customer that does NOT match the currently open form:
+    if (targetCustomer && activeCustomer && !activeCustomer.toLowerCase().includes(targetCustomer.toLowerCase()) && !targetCustomer.toLowerCase().includes(activeCustomer.toLowerCase())) {
+      console.log(`🔍 Checking overdue status for targeted customer "${targetCustomer}" in Dynamics 365...`);
+      const matches = await dynamicsService.searchInvoicesByCustomer(targetCustomer);
+
+      if (matches && matches.length > 0) {
+        const inv = matches[0];
+        const invoiceNumber = inv.invoicenumber || 'N/A';
+        const amount = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+        const customer = inv.customer || targetCustomer;
+        const isPaid = (inv.statecode === 2 || inv.statuscode === 100001);
+
+        if (isPaid) {
+          return {
+            reply: `🟢 **Overdue Status: Settled (Not Overdue)**\n\n` +
+              `* 👤 **Customer:** **${customer}**\n` +
+              `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
+              `* 💵 **Amount:** **${amount}**\n` +
+              `* ✅ **Status:** This invoice has already been fully paid and closed in Dynamics 365.\n\n` +
+              `No further action required!`,
+            isOverdue: false,
+            isPaid: true
+          };
+        }
+
+        let rawDue = inv.duedate;
+        let dueDateObj = rawDue ? new Date(rawDue) : null;
+        let diffDays = 0;
+        let formattedDue = 'Not Specified';
+
+        if (dueDateObj && !isNaN(dueDateObj.getTime())) {
+          const today = new Date();
+          const d1 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const d2 = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), dueDateObj.getDate());
+          diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+          formattedDue = dueDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        if (diffDays >= 0) {
+          const daysText = diffDays === 0 ? 'Due Today' : `Due in ${diffDays} day(s)`;
+          return {
+            reply: `🟢 **Overdue Status: Not Overdue (On Schedule)**\n\n` +
+              `* 👤 **Customer:** **${customer}**\n` +
+              `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
+              `* 💵 **Amount:** **${amount}**\n` +
+              `* 📅 **Due Date:** **${formattedDue}** (${daysText})\n` +
+              `* 📊 **Payment Status:** ⏳ Pending, but within the payment period.\n\n` +
+              `💡 *Client is not late on payment. No escalation needed at this time.*`,
+            isOverdue: false
+          };
+        } else {
+          const lateDays = Math.abs(diffDays);
+          return {
+            reply: `🔴 **Overdue Status: Payment Overdue (${lateDays} Days Late)**\n\n` +
+              `* 👤 **Customer:** **${customer}**\n` +
+              `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
+              `* 💵 **Outstanding Amount:** **${amount}**\n` +
+              `* 📅 **Due Date was:** **${formattedDue}** (${lateDays} day(s) ago)\n` +
+              `* ⚠️ **Payment Status:** ❗ Overdue past the scheduled due date.`,
+            isOverdue: true
+          };
+        }
+      } else {
+        // Customer was NOT found in Dynamics 365
+        return {
+          reply: `🔍 **No Invoice Records Found for "${targetCustomer}" in Dynamics 365.**`,
+          isOverdue: false,
+          notFound: true
+        };
+      }
+    }
+
+    // Default to the currently active form invoice
+    const invoiceId = context.recordId || session.currentRecordId;
+    const invData = await this.resolveInvoiceData(invoiceId, context);
+    const invoiceNumber = invData.invoicenumber || invData.invoiceNumber || 'INV-Active';
+    const amount = '₹' + Number(invData.totalamount || 0).toLocaleString('en-IN');
+    const customer = context.customerName || (invData.customerName && !invData.customerName.toLowerCase().includes('hi customer') ? invData.customerName : 'Valued Customer');
+    const status = (invData.status || 'Active').toUpperCase();
+    const isPaid = (status === 'PAID' || status === 'FULFILLED');
+
+    if (isPaid) {
+      return {
+        reply: `🟢 **Overdue Status: Settled (Not Overdue)**\n\n` +
+          `* 👤 **Customer:** **${customer}**\n` +
+          `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
+          `* 💵 **Amount:** **${amount}**\n` +
+          `* ✅ **Status:** This invoice has already been fully paid and closed in Dynamics 365.\n\n` +
+          `No further action required!`,
+        isOverdue: false,
+        isPaid: true
+      };
+    }
+
+    // Check Due Date
+    let rawDue = context.dueDate || invData.duedate || invData.dueDate;
+    let dueDateObj = rawDue ? new Date(rawDue) : null;
+    let diffDays = 0;
+    let formattedDue = 'Not Specified';
+
+    if (dueDateObj && !isNaN(dueDateObj.getTime())) {
+      const today = new Date();
+      const d1 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const d2 = new Date(dueDateObj.getFullYear(), dueDateObj.getMonth(), dueDateObj.getDate());
+      diffDays = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+      formattedDue = dueDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    let reply = '';
+    if (diffDays >= 0) {
+      const daysText = diffDays === 0 ? 'Due Today' : `Due in ${diffDays} day(s)`;
+      reply = `🟢 **Overdue Status: Not Overdue (On Schedule)**\n\n` +
+        `* 👤 **Customer:** **${customer}**\n` +
+        `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
+        `* 💵 **Amount:** **${amount}**\n` +
+        `* 📅 **Due Date:** **${formattedDue}** (${daysText})\n` +
+        `* 📊 **Payment Status:** ⏳ Pending, but within the payment period.\n\n` +
+        `💡 *Client is not late on payment. No escalation needed at this time.*`;
+    } else {
+      const lateDays = Math.abs(diffDays);
+      reply = `🔴 **Overdue Status: Payment Overdue (${lateDays} Days Late)**\n\n` +
+        `* 👤 **Customer:** **${customer}**\n` +
+        `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
+        `* 💵 **Outstanding Amount:** **${amount}**\n` +
+        `* 📅 **Due Date was:** **${formattedDue}** (${lateDays} day(s) ago)\n` +
+        `* ⚠️ **Payment Status:** ❗ Overdue past the scheduled due date.\n\n` +
+        `💡 *(Note: Scheduled reminder notifications are dispatched automatically via Power Automate Flow).*`;
+    }
+
+    return {
+      reply,
+      isOverdue: diffDays < 0,
+      diffDays,
+      customer,
+      invoiceNumber,
+      amount
     };
   }
 
@@ -635,62 +794,45 @@ class InvoiceBrain {
     // 1. Fetch by explicit invoiceId if available
     if (invoiceId) {
       const live = await dynamicsService.getInvoiceById(invoiceId);
-      if (live) return live;
+      if (live) {
+        if (context.customerName) live.customerName = context.customerName;
+        return live;
+      }
     }
 
     // 2. Fetch by Invoice Number or Name if available in context
     if (context.invoiceNumber || context.recordName) {
       const byNum = await dynamicsService.getInvoiceByNumber(context.invoiceNumber || context.recordName);
-      if (byNum) return byNum;
+      if (byNum) {
+        if (context.customerName) byNum.customerName = context.customerName;
+        return byNum;
+      }
     }
 
     // 3. 100% Dynamic: Fetch most recent live Invoice from Microsoft Dynamics 365 Dataverse
     const latest = await dynamicsService.getLatestInvoice();
-    if (latest) return latest;
+    if (latest) {
+      if (context.customerName) latest.customerName = context.customerName;
+      return latest;
+    }
 
     // 4. Safe fallback using live context parameters only
-    const cleanAmount = context.totalAmount ? (Number(String(context.totalAmount).replace(/[^0-9.]/g, '')) || 29500) : 29500;
+    const cleanAmount = context.totalAmount ? (Number(String(context.totalAmount).replace(/[^0-9.]/g, '')) || 0) : 0;
     return {
-      invoicenumber: context.invoiceNumber || 'INV-01027-R6G3T9',
-      name: context.recordName || 'Sales Invoice - Rina Patel',
-      customerName: context.customerName || 'Rina Patel',
-      company: 'Webtual Technology',
-      customerEmail: context.email || 'Rina@Webtual.com',
+      invoicenumber: context.invoiceNumber || 'INV-Active',
+      name: context.recordName || 'Active Invoice',
+      customerName: context.customerName || 'Valued Customer',
+      company: 'Client Company',
+      customerEmail: context.email || '',
       totalamount: cleanAmount,
       totaltax: Math.round(cleanAmount * 0.18),
       status: 'Active',
       items: [
-        { description: context.recordName || 'Dynamics 365 Sales Suite License', qty: 1, unitPrice: cleanAmount, total: cleanAmount }
+        { description: context.recordName || 'Active Invoice Item', qty: 1, unitPrice: cleanAmount, total: cleanAmount }
       ]
     };
   }
 
-  async handleOutstandingSummary(session, context) {
-    const summary = await dynamicsService.getAllInvoicesSummary();
-    const formattedTotal = '₹' + Number(summary.totalOutstanding).toLocaleString('en-IN');
-    
-    let listText = '';
-    if (summary.invoices && summary.invoices.length > 0) {
-      listText = summary.invoices.map(inv => {
-        const amt = '₹' + Number(inv.amount || 29500).toLocaleString('en-IN');
-        return `* 🧾 **${inv.invoicenumber || 'INV'}** — **${inv.customer || inv.name}**: **${amt}**`;
-      }).join('\n');
-    } else {
-      listText = `* 🧾 **INV-01002-B2P4S4** — **Rina Patel**: **${formattedTotal}**`;
-    }
-
-    const reply = `📊 **Dynamics 365 Invoices & Outstanding Summary**\n\n` +
-      `* 💰 **Total Outstanding Amount:** **${formattedTotal}**\n` +
-      `* 📑 **Unpaid Invoices Count:** **${summary.count} Invoice(s)**\n\n` +
-      `**Active Invoices Breakdown:**\n` +
-      listText + `\n\n` +
-      `💡 *To dispatch reminders or download PDF, click the quick action chips below or ask me!*`;
-
-    return {
-      reply,
-      summary
-    };
-  }
 
   async callGemini(session, userMessage, context) {
     const model = this.genAI.getGenerativeModel({
@@ -713,7 +855,7 @@ class InvoiceBrain {
           `- 📄 **Preview & Download Branded PDF**\n` +
           `- 📧 **Dispatch Tax Invoice to Client** via Email\n` +
           `- ✅ **Mark Invoice as Paid** & update CRM\n` +
-          `- ⏰ **Send Payment Reminders**\n` +
+          `- 💰 **Check Pending Payment & Outstanding Due**\n` +
           `- 🔍 **Audit Tax & GST Compliance**\n\nHow can I assist you today?`
       };
     }

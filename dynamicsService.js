@@ -1102,6 +1102,13 @@ class DynamicsService {
         }
       }
 
+      if (q.name && q.name.includes(' - ')) {
+        const parts = q.name.split(' - ');
+        if (parts.length > 1 && (customerName === 'Valued Customer' || customerName === 'Hi Customer')) {
+          customerName = parts[parts.length - 1].trim();
+        }
+      }
+
       return {
         quoteid: q.quoteid,
         name: q.name,
@@ -1116,6 +1123,39 @@ class DynamicsService {
       };
     } catch (err) {
       console.error('Error fetching quote by ID:', err.response?.data || err.message);
+      return null;
+    }
+  }
+
+  /**
+   * 🔍 Find a quotation by customer name, quote name, or quote number
+   */
+  async findQuoteByQuery(query = '') {
+    if (!this.isConfigured) return null;
+    try {
+      const token = await this.getAccessToken();
+      const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+      const res = await axios.get(`${this.crmUrl}/api/data/v9.2/quotes?$select=quoteid,name,quotenumber,totalamount&$orderby=createdon desc&$top=20`, { headers });
+      const quotes = res.data?.value || [];
+      if (!quotes.length) return null;
+
+      if (!query || !query.trim()) {
+        return await this.getQuoteById(quotes[0].quoteid);
+      }
+
+      const qNorm = query.toLowerCase().trim().replace(/[\s\-_.]/g, '');
+      const found = quotes.find(q => {
+        const qName = (q.name || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        const qNum = (q.quotenumber || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        return qName.includes(qNorm) || qNorm.includes(qName) || qNum.includes(qNorm);
+      });
+
+      if (found) {
+        return await this.getQuoteById(found.quoteid);
+      }
+      return null;
+    } catch (e) {
+      console.warn('findQuoteByQuery error:', e.message);
       return null;
     }
   }
@@ -1541,7 +1581,7 @@ class DynamicsService {
         Prefer: 'odata.include-annotations="*"'
       };
       const res = await axios.get(
-        `${this.crmUrl}/api/data/v9.2/invoices?$select=invoiceid,name,invoicenumber,totalamount,statecode,statuscode,_customerid_value&$expand=customerid_contact($select=fullname,emailaddress1),customerid_account($select=name,emailaddress1)&$orderby=createdon desc&$top=50`,
+        `${this.crmUrl}/api/data/v9.2/invoices?$select=invoiceid,name,invoicenumber,totalamount,duedate,statecode,statuscode,_customerid_value&$expand=customerid_contact($select=fullname,emailaddress1),customerid_account($select=name,emailaddress1)&$orderby=createdon desc&$top=50`,
         { headers }
       );
       const list = res.data?.value || [];
@@ -1550,7 +1590,13 @@ class DynamicsService {
         const amt = Number(inv.totalamount) || 0;
         total += amt;
         const custObj = inv.customerid_contact || inv.customerid_account || {};
-        const customerName = custObj.fullname || custObj.name || inv['_customerid_value@OData.Community.Display.V1.FormattedValue'] || inv.name || 'Valued Customer';
+        let customerName = custObj.fullname || custObj.name || inv['_customerid_value@OData.Community.Display.V1.FormattedValue'] || inv.name || 'Valued Customer';
+        if (inv.name && inv.name.startsWith('Sales Invoice - ')) {
+          const parsed = inv.name.replace('Sales Invoice - ', '').trim();
+          if (parsed && (customerName === 'Valued Customer' || customerName === 'Hi Customer')) {
+            customerName = parsed;
+          }
+        }
         const customerEmail = custObj.emailaddress1 || null;
 
         return {
@@ -1560,7 +1606,9 @@ class DynamicsService {
           customer: customerName,
           email: customerEmail,
           amount: amt,
-          statecode: inv.statecode
+          duedate: inv.duedate || null,
+          statecode: inv.statecode,
+          statuscode: inv.statuscode
         };
       });
       return {
@@ -1574,9 +1622,32 @@ class DynamicsService {
         totalOutstanding: 29500,
         count: 1,
         invoices: [
-          { invoicenumber: 'INV-01002-B2P4S4', name: 'Sales Invoice - Rina Patel', customer: 'Rina Patel', amount: 29500, status: 'New' }
+          { invoicenumber: 'INV-01002-B2P4S4', name: 'Sales Invoice - Rina Patel', customer: 'Rina Patel', amount: 29500, duedate: '2026-10-20', status: 'New' }
         ]
       };
+    }
+  }
+
+  /**
+   * 🔍 Search Invoices by Customer name, Contact, or Invoice Number
+   */
+  async searchInvoicesByCustomer(customerQuery) {
+    if (!customerQuery) return [];
+    try {
+      const summary = await this.getAllInvoicesSummary();
+      const allInvoices = summary.invoices || [];
+      const cleanQ = customerQuery.toLowerCase().trim().replace(/[\s\-_.]/g, '');
+      return allInvoices.filter(inv => {
+        const cName = (inv.customer || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        const invName = (inv.name || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        const num = (inv.invoicenumber || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        return cName.includes(cleanQ) || cleanQ.includes(cName) ||
+               invName.includes(cleanQ) || cleanQ.includes(invName) ||
+               num.includes(cleanQ);
+      });
+    } catch (e) {
+      console.warn('searchInvoicesByCustomer error:', e.message);
+      return [];
     }
   }
 
