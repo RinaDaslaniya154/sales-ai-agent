@@ -18,7 +18,7 @@ if (typeof window !== "undefined") {
 }
 
 // Active Cloudflare Tunnel Live URL for Sales AI Agent Widget (Superfast Local Server)
-SalesAIAgent.WIDGET_URL = "https://trio-weblogs-medicare-scout.trycloudflare.com/widget";
+SalesAIAgent.WIDGET_URL = "https://forwarding-pdf-agenda-photo.trycloudflare.com/widget";
 
 SalesAIAgent.currentFormContext = null;
 
@@ -202,8 +202,8 @@ SalesAIAgent.getLeadContext = function () {
 
   try {
     var fc = SalesAIAgent.currentFormContext ||
-             topWin.__currentLeadFormContext ||
-             (xrm && xrm.Page && xrm.Page.data ? xrm.Page : null);
+      topWin.__currentLeadFormContext ||
+      (xrm && xrm.Page && xrm.Page.data ? xrm.Page : null);
 
     if (fc && fc.data && fc.data.entity) {
       var rawId = fc.data.entity.getId();

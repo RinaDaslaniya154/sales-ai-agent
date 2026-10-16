@@ -1098,7 +1098,7 @@ class DynamicsService {
               company = accRes.data.name || company;
               customerEmail = accRes.data.emailaddress1 || customerEmail;
             }
-          } catch (e2) {}
+          } catch (e2) { }
         }
       }
 
@@ -1240,7 +1240,7 @@ class DynamicsService {
               company = accRes.data.name || company;
               customerEmail = accRes.data.emailaddress1 || customerEmail;
             }
-          } catch (e2) {}
+          } catch (e2) { }
         }
       }
 
@@ -1257,9 +1257,9 @@ class DynamicsService {
         invoicenumber: inv.invoicenumber || 'INV-' + inv.invoiceid.slice(0, 6),
         totalamount: inv.totalamount || 0,
         totaltax: inv.totaltax || 0,
-        totallineitemamount: inv.totallineitemamount || 0,
-        totaldiscountamount: inv.totaldiscountamount || 0,
-        status: inv.statecode === 2 ? 'PAID' : (inv.statecode === 1 ? 'ACTIVE' : 'DRAFT'),
+        status: ((global.paidInvoices && global.paidInvoices.has(inv.invoiceid)) || inv.statecode === 2 || inv.statecode === 3 || inv.statuscode === 100001) ? 'PAID' : (inv.statecode === 0 ? 'ACTIVE' : (inv.statecode === 1 ? 'CLOSED' : 'DRAFT')),
+        statecode: (global.paidInvoices && global.paidInvoices.has(inv.invoiceid)) ? 2 : inv.statecode,
+        statuscode: inv.statuscode,
         customerName,
         customerEmail,
         company,
@@ -1295,6 +1295,54 @@ class DynamicsService {
       return null;
     } catch (err) {
       console.error('Error fetching invoice by number from Dynamics 365:', err.response?.data || err.message);
+      return null;
+    }
+  }
+
+  /**
+   * 🔍 Find an invoice by customer name, invoice name, or invoice number
+   */
+  async findInvoiceByQuery(query = '') {
+    if (!this.isConfigured) return null;
+    try {
+      const token = await this.getAccessToken();
+      const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+      const res = await axios.get(
+        `${this.crmUrl}/api/data/v9.2/invoices?$select=invoiceid,name,invoicenumber,totalamount&$orderby=createdon desc&$top=30`,
+        { headers }
+      );
+      const invoices = res.data?.value || [];
+      if (!invoices.length) return null;
+
+      if (!query || !query.trim()) {
+        return await this.getInvoiceById(invoices[0].invoiceid);
+      }
+
+      const qNorm = query.toLowerCase().trim().replace(/[\s\-_.]/g, '');
+      const found = invoices.find(inv => {
+        const invName = (inv.name || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        const invNum = (inv.invoicenumber || '').toLowerCase().replace(/[\s\-_.]/g, '');
+        return invName.includes(qNorm) || qNorm.includes(invName) || invNum.includes(qNorm);
+      });
+
+      if (found) {
+        return await this.getInvoiceById(found.invoiceid);
+      }
+
+      // Check by resolving customer details for top invoices
+      for (const inv of invoices.slice(0, 10)) {
+        const fullInv = await this.getInvoiceById(inv.invoiceid);
+        if (fullInv) {
+          const cust = (fullInv.customerName || '').toLowerCase().replace(/[\s\-_.]/g, '');
+          if (cust.includes(qNorm) || qNorm.includes(cust)) {
+            return fullInv;
+          }
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Error finding invoice by query in Dynamics 365:', err.response?.data || err.message);
       return null;
     }
   }
@@ -1408,7 +1456,7 @@ class DynamicsService {
             const nRes = await axios.get(`${this.crmUrl}/api/data/v9.2/contacts?$filter=contains(fullname,'${encodeURIComponent(customerName)}')&$select=contactid&$top=1`, { headers });
             if (nRes.data.value?.length > 0) customerBinding = { 'customerid_contact@odata.bind': `/contacts(${nRes.data.value[0].contactid})` };
           }
-        } catch (e) {}
+        } catch (e) { }
 
         const dynamicsPayload = {
           name: `Sales Invoice - ${customerName}`,
@@ -1453,7 +1501,7 @@ class DynamicsService {
               totaldiscountamount: discountAmount,
               totalamount: grandTotal
             }, { headers });
-          } catch (pe) {}
+          } catch (pe) { }
         }
 
         console.log(`🎉 Successfully converted Quote #${quote.quotenumber} to Invoice #${result.invoiceNumber} in Dynamics 365!`);
@@ -1494,12 +1542,32 @@ class DynamicsService {
         console.warn('Could not attach payment note:', e.message);
       }
 
-      // Update statecode to Paid if allowed
+      // Cache paid status in memory immediately
+      global.paidInvoices = global.paidInvoices || new Set();
+      global.paidInvoices.add(cleanId);
+
+      // Update statecode to Paid in Dynamics 365
       try {
         await axios.patch(`${this.crmUrl}/api/data/v9.2/invoices(${cleanId})`, {
+          statecode: 2,
           statuscode: 100001
         }, { headers });
-      } catch (e) {}
+      } catch (e) {
+        try {
+          await axios.patch(`${this.crmUrl}/api/data/v9.2/invoices(${cleanId})`, {
+            statecode: 2,
+            statuscode: 4
+          }, { headers });
+        } catch (e2) {
+          try {
+            await axios.patch(`${this.crmUrl}/api/data/v9.2/invoices(${cleanId})`, {
+              statuscode: 100001
+            }, { headers });
+          } catch (e3) {
+            console.warn('Could not patch invoice statecode in Dynamics 365:', e3.response?.data?.error?.message || e3.message);
+          }
+        }
+      }
 
       return { success: true, status: 'PAID', invoiceId: cleanId, timestamp };
     } catch (err) {
@@ -1585,10 +1653,15 @@ class DynamicsService {
         { headers }
       );
       const list = res.data?.value || [];
-      let total = 0;
-      const formatted = list.map(inv => {
+      let totalOutstanding = 0;
+      let totalPaid = 0;
+      const pendingList = [];
+      const paidList = [];
+
+      for (const inv of list) {
         const amt = Number(inv.totalamount) || 0;
-        total += amt;
+        const isPaid = (inv.statecode === 2 || inv.statuscode === 100001 || inv.statecode === 3);
+
         const custObj = inv.customerid_contact || inv.customerid_account || {};
         let customerName = custObj.fullname || custObj.name || inv['_customerid_value@OData.Community.Display.V1.FormattedValue'] || inv.name || 'Valued Customer';
         if (inv.name && inv.name.startsWith('Sales Invoice - ')) {
@@ -1599,7 +1672,7 @@ class DynamicsService {
         }
         const customerEmail = custObj.emailaddress1 || null;
 
-        return {
+        const item = {
           invoiceid: inv.invoiceid,
           name: inv.name,
           invoicenumber: inv.invoicenumber || 'N/A',
@@ -1608,13 +1681,25 @@ class DynamicsService {
           amount: amt,
           duedate: inv.duedate || null,
           statecode: inv.statecode,
-          statuscode: inv.statuscode
+          statuscode: inv.statuscode,
+          isPaid
         };
-      });
+
+        if (isPaid) {
+          totalPaid += amt;
+          paidList.push(item);
+        } else {
+          totalOutstanding += amt;
+          pendingList.push(item);
+        }
+      }
+
       return {
-        totalOutstanding: total,
-        count: formatted.length,
-        invoices: formatted
+        totalOutstanding,
+        totalPaid,
+        count: pendingList.length,
+        invoices: pendingList,
+        paidInvoices: paidList
       };
     } catch (e) {
       console.warn('getAllInvoicesSummary error:', e.message);
@@ -1642,8 +1727,8 @@ class DynamicsService {
         const invName = (inv.name || '').toLowerCase().replace(/[\s\-_.]/g, '');
         const num = (inv.invoicenumber || '').toLowerCase().replace(/[\s\-_.]/g, '');
         return cName.includes(cleanQ) || cleanQ.includes(cName) ||
-               invName.includes(cleanQ) || cleanQ.includes(invName) ||
-               num.includes(cleanQ);
+          invName.includes(cleanQ) || cleanQ.includes(invName) ||
+          num.includes(cleanQ);
       });
     } catch (e) {
       console.warn('searchInvoicesByCustomer error:', e.message);

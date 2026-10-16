@@ -11,7 +11,7 @@
 var InvoiceAIAgent = window.InvoiceAIAgent || {};
 
 // Active Cloudflare Tunnel Live URL for Invoice AI Agent (Superfast Local Server)
-InvoiceAIAgent.WIDGET_URL = "https://trio-weblogs-medicare-scout.trycloudflare.com/invoice";
+InvoiceAIAgent.WIDGET_URL = "https://forwarding-pdf-agenda-photo.trycloudflare.com/invoice";
 
 InvoiceAIAgent.currentFormContext = null;
 InvoiceAIAgent.watcherInterval = null;
