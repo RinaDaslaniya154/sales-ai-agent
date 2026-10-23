@@ -25,19 +25,31 @@ function generateInvoicePDF(invoiceData = {}) {
         { description: 'Enterprise AI Suite - Annual Plan (5 Users)', qty: 5, unitPrice: 4999, total: 24995 },
         { description: 'Dynamics 365 Dataverse Integration & Setup', qty: 1, unitPrice: 8000, total: 8000 }
       ],
-      discountPercent = 10,
+      discountPercent = Number(invoiceData.discountPercent || invoiceData.discountpercentage || 0),
       taxPercent = 18,
       status = 'ACTIVE'
     } = invoiceData;
 
     const curSymbol = 'Rs. ';
 
-    // Financial calculations
-    const subtotal = items.reduce((acc, it) => acc + (Number(it.total) || (Number(it.qty) * Number(it.unitPrice)) || 0), 0);
-    const discountAmount = Math.round((subtotal * discountPercent) / 100);
+    // Financial calculations — Strictly synchronized with Microsoft Dynamics 365
+    const subtotal = (invoiceData.totallineitemamount !== undefined && invoiceData.totallineitemamount !== null && Number(invoiceData.totallineitemamount) > 0)
+      ? Number(invoiceData.totallineitemamount)
+      : items.reduce((acc, it) => acc + (Number(it.total) || (Number(it.qty) * Number(it.unitPrice)) || 0), 0);
+
+    const discountAmount = (invoiceData.totaldiscountamount !== undefined && invoiceData.totaldiscountamount !== null && Number(invoiceData.totaldiscountamount) > 0)
+      ? Number(invoiceData.totaldiscountamount)
+      : Math.round((subtotal * discountPercent) / 100);
+
     const taxableAmount = subtotal - discountAmount;
-    const taxAmount = Math.round((taxableAmount * taxPercent) / 100);
-    const grandTotal = taxableAmount + taxAmount;
+
+    const taxAmount = (invoiceData.totaltax !== undefined && invoiceData.totaltax !== null && Number(invoiceData.totaltax) > 0)
+      ? Number(invoiceData.totaltax)
+      : Math.round((taxableAmount * taxPercent) / 100);
+
+    const grandTotal = (invoiceData.totalamount !== undefined && invoiceData.totalamount !== null && Number(invoiceData.totalamount) > 0)
+      ? Number(invoiceData.totalamount)
+      : (taxableAmount + taxAmount);
 
     // ── Top Brand Header (Clean Modern SaaS Look) ──
     doc.rect(0, 0, doc.page.width, 4).fill('#4f46e5');
@@ -142,14 +154,19 @@ function generateInvoicePDF(invoiceData = {}) {
          .text(value, totalsX, y, { align: 'right', width: totalsW });
     };
 
+    let lineOffset = 0;
     printLine('Subtotal:', `${curSymbol}${subtotal.toLocaleString('en-IN')}`, currentY);
-    printLine(`Discount (${discountPercent}%):`, `- ${curSymbol}${discountAmount.toLocaleString('en-IN')}`, currentY + 17, true);
-    printLine(`GST / Tax (${taxPercent}%):`, `+ ${curSymbol}${taxAmount.toLocaleString('en-IN')}`, currentY + 34);
+    if (discountAmount > 0) {
+      lineOffset += 17;
+      printLine(`Discount (${discountPercent}%):`, `- ${curSymbol}${discountAmount.toLocaleString('en-IN')}`, currentY + lineOffset, true);
+    }
+    lineOffset += 17;
+    printLine(`GST / Tax (${taxPercent}%):`, `+ ${curSymbol}${taxAmount.toLocaleString('en-IN')}`, currentY + lineOffset);
 
-    doc.moveTo(totalsX, currentY + 52).lineTo(totalsX + totalsW, currentY + 52).strokeColor('#e2e8f0').lineWidth(1).stroke();
+    doc.moveTo(totalsX, currentY + lineOffset + 18).lineTo(totalsX + totalsW, currentY + lineOffset + 18).strokeColor('#e2e8f0').lineWidth(1).stroke();
 
     // Total Payable
-    const pillY = currentY + 58;
+    const pillY = currentY + lineOffset + 24;
     doc.fillColor('#000000').font('Helvetica-Bold').fontSize(11)
        .text('Total Payable:', totalsX + 4, pillY + 8);
     doc.fillColor('#000000').font('Helvetica-Bold').fontSize(12)

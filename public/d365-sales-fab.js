@@ -18,7 +18,7 @@ if (typeof window !== "undefined") {
 }
 
 // Active Cloudflare Tunnel Live URL for Sales AI Agent Widget (Superfast Local Server)
-SalesAIAgent.WIDGET_URL = "https://forwarding-pdf-agenda-photo.trycloudflare.com/widget";
+SalesAIAgent.WIDGET_URL = "https://roots-earn-lottery-mhz.trycloudflare.com/widget";
 
 SalesAIAgent.currentFormContext = null;
 

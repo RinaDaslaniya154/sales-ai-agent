@@ -499,16 +499,9 @@ class AgentBrain {
       const tax = Number(invoiceResult.taxAmount || 4500).toLocaleString('en-IN');
       const total = Number(invoiceResult.grandTotal || 29500).toLocaleString('en-IN');
 
-      return `🎉 **Tax Invoice Successfully Created in Dynamics 365!**\n\n` +
-        `* 🧾 **Invoice Number:** \`${invNumber}\`\n` +
-        `* 👤 **Customer:** **${custName}**\n` +
-        `* 📦 **Quotation Converted:** \`${quote.quotenumber}\` (*${quote.name}*)\n` +
-        `* 💵 **Subtotal Amount:** **₹${subtotal}**\n` +
-        `* 🏷️ **GST (18%):** **₹${tax}** *(CGST 9% + SGST 9%)*\n` +
-        `* 💰 **Grand Total Payable:** **₹${total}**\n` +
-        `* 📅 **Payment Due Date:** Within 7 Days\n\n` +
-        `🟢 **Status:** Successfully generated and saved to **Microsoft Dynamics 365 Sales Hub**.\n\n` +
-        `📥 [Download Invoice PDF](/api/invoice-agent/download-pdf/${invNumber})`;
+      return invoiceResult.alreadyExists
+        ? `ℹ️ **Invoice #${invNumber}** is already created for Quote \`${quote.quotenumber}\` (${custName}).`
+        : `✅ **Invoice #${invNumber}** created for **${custName}** (₹${total}). [Download PDF](/api/invoice-agent/download-pdf/${invNumber})`;
     } catch (e) {
       console.error('tryFastQuoteToInvoice error:', e);
       return `❌ **Error creating invoice:** ${e.message}`;

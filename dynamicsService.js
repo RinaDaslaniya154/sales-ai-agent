@@ -1144,10 +1144,14 @@ class DynamicsService {
       }
 
       const qNorm = query.toLowerCase().trim().replace(/[\s\-_.]/g, '');
+      if (!qNorm) return null;
+
       const found = quotes.find(q => {
         const qName = (q.name || '').toLowerCase().replace(/[\s\-_.]/g, '');
         const qNum = (q.quotenumber || '').toLowerCase().replace(/[\s\-_.]/g, '');
-        return qName.includes(qNorm) || qNorm.includes(qName) || qNum.includes(qNorm);
+        return (qName && qName.includes(qNorm)) ||
+          (qName && qName.length >= 4 && qNorm.includes(qName)) ||
+          (qNum && qNum.includes(qNorm));
       });
 
       if (found) {
@@ -1257,6 +1261,9 @@ class DynamicsService {
         invoicenumber: inv.invoicenumber || 'INV-' + inv.invoiceid.slice(0, 6),
         totalamount: inv.totalamount || 0,
         totaltax: inv.totaltax || 0,
+        totallineitemamount: inv.totallineitemamount || 0,
+        totaldiscountamount: inv.totaldiscountamount || 0,
+        discountpercentage: inv.discountpercentage || 0,
         status: ((global.paidInvoices && global.paidInvoices.has(inv.invoiceid)) || inv.statecode === 2 || inv.statecode === 3 || inv.statuscode === 100001) ? 'PAID' : (inv.statecode === 0 ? 'ACTIVE' : (inv.statecode === 1 ? 'CLOSED' : 'DRAFT')),
         statecode: (global.paidInvoices && global.paidInvoices.has(inv.invoiceid)) ? 2 : inv.statecode,
         statuscode: inv.statuscode,
@@ -1409,7 +1416,7 @@ class DynamicsService {
     ];
 
     const subtotal = items.reduce((acc, it) => acc + (it.total || it.qty * it.unitPrice), 0);
-    const discountPercent = customData.discountPercent !== undefined ? customData.discountPercent : 10;
+    const discountPercent = customData.discountPercent !== undefined ? customData.discountPercent : (quote.discountpercentage || 0);
     const discountAmount = Math.round((subtotal * discountPercent) / 100);
     const taxable = subtotal - discountAmount;
     const taxAmount = Math.round((taxable * 18) / 100);
@@ -1458,6 +1465,38 @@ class DynamicsService {
           }
         } catch (e) { }
 
+        // Dynamics 365 Rule: Check if Invoice has already been created for this Quote (Prevent duplicate creation)
+        try {
+          const safeQuoteNum = encodeURIComponent(String(quote.quotenumber || '').trim());
+          const existingRes = await axios.get(
+            `${this.crmUrl}/api/data/v9.2/invoices?$filter=contains(description,'${safeQuoteNum}')&$select=invoiceid,invoicenumber,name,totalamount,totaltax,totallineitemamount,statecode,statuscode&$top=1`,
+            { headers }
+          );
+          if (existingRes.data?.value?.length > 0) {
+            const existing = existingRes.data.value[0];
+            console.log(`⚡ [Dynamics 365 Rule] Invoice already exists for Quote #${quote.quotenumber}: #${existing.invoicenumber} (${existing.invoiceid}). Reusing.`);
+            const existingDetails = await this.getInvoiceById(existing.invoiceid);
+            return {
+              ...(existingDetails || {}),
+              alreadyExists: true,
+              success: true,
+              invoiceId: existing.invoiceid,
+              invoiceNumber: existing.invoicenumber || existingDetails?.invoiceNumber,
+              customerName: customerName,
+              company: company,
+              email: email,
+              grandTotal: existing.totalamount || grandTotal,
+              subtotal: existing.totallineitemamount || subtotal,
+              taxAmount: existing.totaltax || taxAmount,
+              convertedFromQuoteId: cleanId,
+              quoteNumber: quote.quotenumber,
+              items: existingDetails?.items || items
+            };
+          }
+        } catch (chkErr) {
+          console.warn('Existing invoice check warning:', chkErr.message);
+        }
+
         const dynamicsPayload = {
           name: `Sales Invoice - ${customerName}`,
           description: `Automatically converted from Quote #${quote.quotenumber} via Sales AI Copilot`,
@@ -1503,6 +1542,16 @@ class DynamicsService {
             }, { headers });
           } catch (pe) { }
         }
+
+        // Mark Quote as Won in Dynamics 365 (standard CRM rule)
+        try {
+          if (cleanId) {
+            await axios.patch(`${this.crmUrl}/api/data/v9.2/quotes(${cleanId})`, {
+              statecode: 2, // Won
+              statuscode: 4 // Won
+            }, { headers });
+          }
+        } catch (we) { }
 
         console.log(`🎉 Successfully converted Quote #${quote.quotenumber} to Invoice #${result.invoiceNumber} in Dynamics 365!`);
         return result;
@@ -1634,11 +1683,12 @@ class DynamicsService {
   async getAllInvoicesSummary() {
     if (!this.isConfigured) {
       return {
-        totalOutstanding: 29500,
-        count: 1,
-        invoices: [
-          { invoicenumber: 'INV-01002-B2P4S4', name: 'Sales Invoice - Rina Patel', customer: 'Rina Patel', amount: 29500, status: 'New' }
-        ]
+        totalOutstanding: 0,
+        totalPaid: 0,
+        count: 0,
+        invoices: [],
+        paidInvoices: [],
+        allInvoices: []
       };
     }
     try {
@@ -1694,21 +1744,25 @@ class DynamicsService {
         }
       }
 
+      const allInvoices = [...pendingList, ...paidList];
+
       return {
         totalOutstanding,
         totalPaid,
         count: pendingList.length,
         invoices: pendingList,
-        paidInvoices: paidList
+        paidInvoices: paidList,
+        allInvoices
       };
     } catch (e) {
       console.warn('getAllInvoicesSummary error:', e.message);
       return {
-        totalOutstanding: 29500,
-        count: 1,
-        invoices: [
-          { invoicenumber: 'INV-01002-B2P4S4', name: 'Sales Invoice - Rina Patel', customer: 'Rina Patel', amount: 29500, duedate: '2026-10-20', status: 'New' }
-        ]
+        totalOutstanding: 0,
+        totalPaid: 0,
+        count: 0,
+        invoices: [],
+        paidInvoices: [],
+        allInvoices: []
       };
     }
   }
@@ -1720,7 +1774,7 @@ class DynamicsService {
     if (!customerQuery) return [];
     try {
       const summary = await this.getAllInvoicesSummary();
-      const allInvoices = summary.invoices || [];
+      const allInvoices = [...(summary.invoices || []), ...(summary.paidInvoices || [])];
       const cleanQ = customerQuery.toLowerCase().trim().replace(/[\s\-_.]/g, '');
       return allInvoices.filter(inv => {
         const cName = (inv.customer || '').toLowerCase().replace(/[\s\-_.]/g, '');

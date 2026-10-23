@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   res.removeHeader('X-Frame-Options');
   res.setHeader('Content-Security-Policy', "frame-ancestors *");
   next();

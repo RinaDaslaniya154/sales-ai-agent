@@ -23,8 +23,9 @@ Directives:
    - When requested to "mark paid", "payment received", "close invoice", call 'mark_invoice_as_paid'.
    - When requested to check "outstanding balance", "pending payment", "unpaid bills", or "overdue", call 'check_outstanding_balance'. Note: Email reminder notifications are handled automatically by Power Automate Flow.
    - When requested to "audit", "check tax", or "check compliance", call 'audit_invoice_compliance'.
-3. Always respond professionally, concisely, and efficiently as an enterprise billing colleague.
-4. Output valid markdown with emoji badges and clean tables/bullet points.
+3. You have full access across all Dynamics 365 Invoices and Customers. If the user mentions any customer or invoice (even if not currently displayed on screen), provide the requested information directly. NEVER refuse or tell the user to navigate away.
+4. Always respond professionally, concisely, and efficiently as an enterprise billing colleague.
+5. Output valid markdown with emoji badges and clean tables/bullet points.
 `;
 
 class InvoiceBrain {
@@ -126,9 +127,28 @@ class InvoiceBrain {
       return await this.handleOverdueCheck(session, context, userMessage);
     }
 
-    // 10. Outstanding Balance, Pending Invoices & Payment Summary
+    // 10. List Invoices / Invoices List
+    if (
+      /\b(list|all|show|get|display|fetch|view|see)\b.*\b(invoices?|bills?)\b/i.test(textLower) ||
+      /\b(invoices?|bills?)\b.*\b(list|all)\b/i.test(textLower) ||
+      /\b(bdha|badha|badha j|list)\b.*\b(invoice|bill)\b/i.test(textLower)
+    ) {
+      return await this.handleListInvoices(session, context, userMessage);
+    }
+
+    // 11. Outstanding Balance, Pending Invoices & Payment Summary
     if (/\b(outstanding|pending|due|balance|total amount|unpaid|total|remind|reminder|follow up|folo)\b/i.test(textLower)) {
       return await this.handleOutstandingSummary(session, context, textLower, userMessage);
+    }
+
+    // 12. Single Invoice Lookup by Customer Name, Number, or Query
+    const isInvoiceLookup =
+      /['’]s\s+(invoices?|bills?)\b/i.test(textLower) ||
+      /\b(invoices?|bills?)\b\s+(?:of|for|about)\s+[a-z0-9]/i.test(textLower) ||
+      /\b(give|show|get|display|view|fetch|find|check|details|info|open)\b.*\b(invoices?|bills?)\b/i.test(textLower);
+
+    if (isInvoiceLookup) {
+      return await this.handleCustomerInvoiceLookup(session, context, userMessage);
     }
 
     // AI Fallback via Gemini or Smart Rules
@@ -152,10 +172,25 @@ class InvoiceBrain {
     let target = '';
     const m = (userMessage || '').match(/(?:based\s+on|from|for|of)\s+([A-Za-z0-9\s._-]+?)(?:(?:['’]s)?\s+(?:quotation|quote|invoice|bill)|$)/i);
     if (m && m[1]) {
-      const candidate = m[1].replace(/['’]s/gi, '').trim();
+      const candidate = m[1].replace(/['’]s/gi, '').replace(/\b(quotation|quote|invoice)\b/gi, '').trim();
       const stopWords = new Set(['an', 'a', 'the', 'my', 'this', 'current', 'active', 'new', 'client', 'prospect', 'lead']);
       if (!stopWords.has(candidate.toLowerCase()) && candidate.length > 1) {
         target = candidate;
+      }
+    }
+
+    // Direct name extraction fallback if user explicitly typed a person's name
+    if (!target) {
+      const words = (userMessage || '').split(/\s+/);
+      for (let i = 0; i < words.length; i++) {
+        const cleanWord = words[i].replace(/[^a-zA-Z]/g, '');
+        if (cleanWord.length > 2 && !['create', 'invoice', 'quote', 'quotation', 'convert', 'from', 'this', 'that', 'please'].includes(cleanWord.toLowerCase())) {
+          target = cleanWord;
+          if (words[i + 1] && words[i + 1].replace(/[^a-zA-Z]/g, '').length > 2) {
+            target += ' ' + words[i + 1].replace(/[^a-zA-Z]/g, '');
+          }
+          break;
+        }
       }
     }
 
@@ -219,15 +254,9 @@ class InvoiceBrain {
         dynamicsService.attachInvoicePdf(convRes.invoiceId, pdfBuffer, `${convRes.invoiceNumber}.pdf`).catch(e => console.error(e));
       }
 
-      const itemsList = (convRes.items || []).map((it, i) => `  ${i + 1}. **${it.description}** — Qty: ${it.qty} × ₹${Number(it.unitPrice).toLocaleString('en-IN')}`).join('\n');
-
-      const reply = `🎉 **Successfully Converted Quote to Tax Invoice in Dynamics 365!**\n\n` +
-        `* 📑 **Invoice No:** \`${convRes.invoiceNumber}\`\n` +
-        `* 👤 **Customer:** **${convRes.customerName}** (${convRes.company})\n` +
-        `* 📦 **Quotation Converted:** \`${foundQuote.quotenumber}\` (*${foundQuote.name}*)\n` +
-        `* 💰 **Total Payable:** **₹${Number(convRes.grandTotal).toLocaleString('en-IN')}** (includes 18% GST)\n\n` +
-        `**Line Items:**\n${itemsList}\n\n` +
-        `⚡ **Dynamics 365 Sync:** Record created in Invoices table & linked to timeline.\n\n` +
+      const reply = convRes.alreadyExists
+        ? `ℹ️ **Invoice #${convRes.invoiceNumber}** is already created for this quotation (${convRes.customerName}).`
+        : `✅ **Invoice #${convRes.invoiceNumber}** created for **${convRes.customerName}** (₹${Number(convRes.grandTotal).toLocaleString('en-IN')}).\n\n` +
         `<!--INVOICE_ACTION:${JSON.stringify({
           action: 'converted',
           invoiceNumber: convRes.invoiceNumber,
@@ -254,29 +283,62 @@ class InvoiceBrain {
    * 📧 Send Invoice PDF via Email
    */
   async handleEmailInvoice(session, context, userMessage = '') {
-    const invoiceId = context.recordId || session.currentRecordId;
-    const invData = await this.resolveInvoiceData(invoiceId, context);
+    let target = '';
+    const invNumMatch = (userMessage || '').match(/\b(INV-[A-Za-z0-9-]+)\b/i);
+    if (invNumMatch) {
+      target = invNumMatch[1];
+    } else {
+      const candidate = (userMessage || '')
+        .replace(/\b(send|email|mail|dispatch|give|me|to|for|the|a|an|pdf|tax|invoice|bill|please|can|you)\b/gi, '')
+        .replace(/['’]s/gi, '')
+        .trim();
+      const stopWords = new Set(['for', 'of', 'to', 'regarding', 'active', 'this', 'current', 'my', 'new', 'client', 'customer']);
+      const filtered = candidate.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase()) && !w.includes('@')).join(' ').trim();
+      if (filtered.length > 1) {
+        target = filtered;
+      }
+    }
 
-    const targetEmail = context.email || invData.customerEmail || invData.email || 'customer@example.com';
-    const customerName = context.customerName || invData.customerName || 'Valued Customer';
+    let invData = null;
+    let invoiceId = null;
+    if (target) {
+      invData = await dynamicsService.findInvoiceByQuery(target);
+      if (invData) invoiceId = invData.invoiceid;
+    }
+    if (!invData) {
+      invoiceId = context.recordId || session.currentRecordId;
+      invData = await this.resolveInvoiceData(invoiceId, context);
+    }
+
+    let targetEmail = context.email || invData.customerEmail || invData.email || 'customer@example.com';
+    let customerName = context.customerName || invData.customerName || 'Valued Customer';
     const invoiceNumber = invData.invoicenumber || invData.invoiceNumber || 'INV-2026-01';
 
-    // Generate fresh PDF or use cache
-    let pdfBuffer = null;
-    const cached = global.invoicePdfCache.get(invoiceNumber);
-    if (cached && cached.pdfBuffer) {
-      pdfBuffer = cached.pdfBuffer;
-    } else {
-      pdfBuffer = await invoicePdfService.generateInvoicePDF({
-        invoiceNumber,
-        customerName,
-        company: invData.company,
-        email: targetEmail,
-        items: invData.items,
-        status: invData.status || 'ACTIVE'
-      });
-      global.invoicePdfCache.set(invoiceNumber, { pdfBuffer, data: invData });
+    // If user explicitly specified email in their prompt (e.g., "to Rina Patel at Rina@Webtual.com")
+    const emailMatch = (userMessage || '').match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch) {
+      targetEmail = emailMatch[1].trim();
     }
+    const nameMatch = (userMessage || '').match(/(?:to|for)\s+([A-Za-z\s]+?)(?:\s+at|\s+on|\s*<|\s*$)/i);
+    if (nameMatch && nameMatch[1].trim() && !['this', 'the', 'client', 'customer', 'tax invoice', 'invoice'].includes(nameMatch[1].trim().toLowerCase())) {
+      customerName = nameMatch[1].trim();
+    }
+
+    // Generate fresh PDF strictly synced with Dynamics 365 numbers
+    const pdfBuffer = await invoicePdfService.generateInvoicePDF({
+      invoiceNumber,
+      customerName,
+      company: invData.company,
+      email: targetEmail,
+      items: invData.items,
+      totallineitemamount: invData.totallineitemamount,
+      totaldiscountamount: invData.totaldiscountamount,
+      discountPercent: invData.discountpercentage || 0,
+      totaltax: invData.totaltax,
+      totalamount: invData.totalamount,
+      status: invData.status || 'ACTIVE'
+    });
+    global.invoicePdfCache.set(invoiceNumber, { pdfBuffer, data: invData });
 
     const fileName = `${invoiceNumber}.pdf`;
     const sendResult = await emailService.sendCustomAttachment(
@@ -292,12 +354,7 @@ class InvoiceBrain {
       dynamicsService.attachInvoicePdf(invoiceId, pdfBuffer, fileName).catch(e => console.error(e));
     }
 
-    const reply = `📧 **Tax Invoice Dispatched to Client!**\n\n` +
-      `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
-      `* 👤 **Recipient:** **${customerName}** (\`${targetEmail}\`)\n` +
-      `* 📎 **Attachment:** \`${fileName}\`\n` +
-      `* ⚡ **Status:** ${sendResult.status}\n\n` +
-      `Timeline updated in Microsoft Dynamics 365 with delivery confirmation note!`;
+    const reply = `📧 Invoice **#${invoiceNumber}** successfully emailed to **${customerName}** (\`${targetEmail}\`).`;
 
     return {
       reply,
@@ -311,18 +368,19 @@ class InvoiceBrain {
   async handlePreviewPdf(session, context, userMessage = '') {
     // 1. Check if user specified a customer name or invoice number in the message
     let target = '';
-    const m = (userMessage || '').match(/(?:for|of|to|regarding)\s+([A-Za-z0-9\s._-]+?)(?:(?:['’]s)?\s+(?:tax\s+)?(?:invoice|bill|pdf)|$)/i);
-    if (m && m[1]) {
-      const candidate = m[1].replace(/['’]s/gi, '').trim();
-      const stopWords = new Set(['an', 'a', 'the', 'my', 'this', 'current', 'active', 'new', 'client', 'prospect', 'lead', 'invoice', 'tax', 'pdf']);
-      if (!stopWords.has(candidate.toLowerCase()) && candidate.length > 1) {
-        target = candidate;
-      }
-    }
-
     const invNumMatch = (userMessage || '').match(/\b(INV-[A-Za-z0-9-]+)\b/i);
     if (invNumMatch) {
       target = invNumMatch[1];
+    } else {
+      const candidate = (userMessage || '')
+        .replace(/\b(give|me|show|get|download|preview|priview|view|print|generate|the|a|an|pdf|tax|invoice|bill|please|can|you)\b/gi, '')
+        .replace(/['’]s/gi, '')
+        .trim();
+      const stopWords = new Set(['for', 'of', 'to', 'regarding', 'active', 'this', 'current', 'my', 'new', 'client', 'customer']);
+      const filtered = candidate.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase())).join(' ').trim();
+      if (filtered.length > 1) {
+        target = filtered;
+      }
     }
 
     let invData = null;
@@ -352,6 +410,11 @@ class InvoiceBrain {
         company: invData.company,
         email: invData.customerEmail,
         items: invData.items,
+        totallineitemamount: invData.totallineitemamount,
+        totaldiscountamount: invData.totaldiscountamount,
+        discountPercent: invData.discountpercentage || 0,
+        totaltax: invData.totaltax,
+        totalamount: invData.totalamount,
         status: invData.status || 'ACTIVE'
       });
       global.invoicePdfCache.set(invoiceNumber, { pdfBuffer, data: invData });
@@ -408,11 +471,7 @@ class InvoiceBrain {
 
     if (isAlreadyPaid) {
       return {
-        reply: `ℹ️ **Invoice \`${invoiceNumber}\` is already PAID!**\n\n` +
-          `* 👤 **Customer:** **${customer}**\n` +
-          `* 💰 **Amount Settled:** **₹${amount}**\n` +
-          `* 🟢 **Status in Dynamics 365:** Fully Paid & Settled.\n\n` +
-          `🎉 No action required as this payment was already recorded!`,
+        reply: `ℹ️ Invoice **#${invoiceNumber}** is already PAID for **${customer}** (₹${amount}).`,
         isAlreadyPaid: true,
         statusUpdated: 'PAID'
       };
@@ -427,14 +486,7 @@ class InvoiceBrain {
       cached.pdfBuffer = await invoicePdfService.generateInvoicePDF({ ...cached.data, status: 'PAID' });
     }
 
-    const reply = `✅ **Invoice Successfully Marked as PAID!**\n\n` +
-      `* 📑 **Invoice:** \`${invoiceNumber}\`\n` +
-      `* 👤 **Customer:** **${customer}**\n` +
-      `* 💰 **Amount Settled:** **₹${amount}**\n` +
-      `* 📅 **Timestamp:** ${new Date().toLocaleString('en-IN')}\n\n` +
-      `⚡ **Dynamics 365 Updates:**\n` +
-      `- Record status updated to **PAID / FULFILLED**\n` +
-      `- Payment audit note logged on Timeline`;
+    const reply = `✅ Invoice **#${invoiceNumber}** marked as PAID for **${customer}** (₹${amount}).`;
 
     return {
       reply,
@@ -452,11 +504,14 @@ class InvoiceBrain {
       return null;
     }
 
-    // 1. Possessive pattern: "Rina Patel's payment has been received" / "Bhargav's invoice"
+    // 1. Explicit target pattern: "for Rina Patel", "about Bhargav", "of Ankit shah"
+    const forMatch = msg.match(/\b(?:for|of|about|client|customer)\s+([A-Za-z0-9\s._-]+?)(?:\s+(?:as\s+paid|account|invoice|bill|record)|$)/i);
+
+    // 2. Possessive pattern: "Rina Patel's payment has been received" / "Bhargav's invoice"
     const posMatch = msg.match(/^([A-Za-z0-9\s._-]+?)(?:['’]s)?\s+(?:payment|invoice|bill)/i);
 
-    // 2. Preposition pattern: "payment for Rina Patel" / "mark Bhargav mistri as paid"
-    const match = msg.match(/(?:for|of|about|check|status|client|customer|mark)\s+([A-Za-z0-9\s._-]+?)(?:\s+(?:as\s+paid|client|customer|invoice|bill|account|payment)|$)/i);
+    // 3. Action pattern: "mark Bhargav mistri as paid"
+    const markMatch = msg.match(/\b(?:mark|check)\s+([A-Za-z0-9\s._-]+?)(?:\s+(?:as\s+paid|status)|$)/i);
 
     const stopWords = new Set([
       'overdue', 'status', 'check', 'for', 'client', 'customer', 'invoice', 'invoices',
@@ -467,12 +522,24 @@ class InvoiceBrain {
     ]);
 
     let candidate = '';
-    if (posMatch && posMatch[1]) {
+    if (forMatch && forMatch[1]) {
+      const cleanFor = forMatch[1].trim();
+      const testWords = cleanFor.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      if (testWords.length > 0) candidate = cleanFor;
+    }
+
+    if (!candidate && posMatch && posMatch[1]) {
       const c = posMatch[1].replace(/['’]s/gi, '').trim();
       if (!stopWords.has(c.toLowerCase())) candidate = c;
-    } else if (match && match[1]) {
-      candidate = match[1].trim();
-    } else {
+    }
+
+    if (!candidate && markMatch && markMatch[1]) {
+      const c = markMatch[1].trim();
+      const testWords = c.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      if (testWords.length > 0) candidate = c;
+    }
+
+    if (!candidate) {
       const words = msg.split(/\s+/).filter(w => !stopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
       if (words.length > 0 && words.length <= 4) {
         candidate = words.join(' ');
@@ -494,8 +561,8 @@ class InvoiceBrain {
     const targetCustomer = !isOverallQuery ? this.extractTargetCustomerName(userMessage || query) : null;
     const activeCustomer = context.customerName || session.customerName || '';
 
-    // If user specifically asked about a different customer
-    if (!isOverallQuery && targetCustomer && activeCustomer && !activeCustomer.toLowerCase().includes(targetCustomer.toLowerCase()) && !targetCustomer.toLowerCase().includes(activeCustomer.toLowerCase())) {
+    // If user specifically asked about a customer
+    if (!isOverallQuery && targetCustomer) {
       console.log(`🔍 Checking balance for targeted customer "${targetCustomer}" in Dynamics 365...`);
       const matches = await dynamicsService.searchInvoicesByCustomer(targetCustomer);
       if (matches && matches.length > 0) {
@@ -552,13 +619,174 @@ class InvoiceBrain {
     let reply = '';
     if (pendingCount === 0) {
       reply = `🎉 **All invoices are fully settled!** No pending payments.`;
+    } else if (pendingCount === 1) {
+      const inv = summary.invoices[0];
+      const amtStr = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+      reply = `💰 **Total Outstanding:** **${formattedTotal}** — **${inv.customer}:** ${amtStr} (\`${inv.invoicenumber}\`)`;
     } else {
-      reply = `💰 **Total Outstanding:** **${formattedTotal}** across **${pendingCount} pending invoice${pendingCount > 1 ? 's' : ''}**.`;
+      const lines = summary.invoices.map(inv => `• **${inv.customer}:** ₹${Number(inv.amount || 0).toLocaleString('en-IN')} (\`${inv.invoicenumber}\`)`).join('\n');
+      reply = `💰 **Total Outstanding:** **${formattedTotal}** (${pendingCount} pending invoices):\n${lines}`;
     }
 
     return {
       reply,
       summary
+    };
+  }
+
+  /**
+   * 📑 List All Invoices from Dynamics 365
+   */
+  async handleListInvoices(session, context, userMessage = '') {
+    const textLower = (userMessage || '').toLowerCase();
+    const summary = await dynamicsService.getAllInvoicesSummary();
+    const all = summary.allInvoices || [...(summary.invoices || []), ...(summary.paidInvoices || [])];
+
+    if (!all || all.length === 0) {
+      return {
+        reply: `📂 **No Invoices Found in Dynamics 365**\n\nThere are currently no invoice records created in your Dynamics 365 Sales Hub.`
+      };
+    }
+
+    let displayList = all;
+    let title = 'All Invoices';
+    if (/\b(paid|cleared|settled)\b/i.test(textLower)) {
+      displayList = summary.paidInvoices || all.filter(i => i.isPaid);
+      title = 'Paid Invoices';
+    } else if (/\b(pending|unpaid|due|outstanding)\b/i.test(textLower)) {
+      displayList = summary.invoices || all.filter(i => !i.isPaid);
+      title = 'Pending Invoices';
+    }
+
+    if (displayList.length === 0) {
+      return {
+        reply: `ℹ️ **No ${title} Found** in Dynamics 365.`
+      };
+    }
+
+    const rows = displayList.map(inv => {
+      const invNum = inv.invoicenumber && inv.invoicenumber !== 'N/A' ? inv.invoicenumber : (inv.name || 'INV');
+      const cust = inv.customer || 'Valued Customer';
+      const amt = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+      const statusBadge = inv.isPaid ? '✅ Paid' : '⏳ Due';
+      let dueStr = '-';
+      if (inv.duedate) {
+        try {
+          const d = new Date(inv.duedate);
+          dueStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+        } catch (_) {}
+      }
+      return `| \`${invNum}\` | **${cust}** | ${amt} | ${statusBadge} | ${dueStr} |`;
+    }).join('\n');
+
+    const totalAmt = displayList.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const formattedTotal = '₹' + totalAmt.toLocaleString('en-IN');
+
+    const reply = `### 📑 Dynamics 365 ${title} (${displayList.length})\n\n` +
+      `| Invoice No | Customer | Amount | Status | Due Date |\n` +
+      `| :--- | :--- | :--- | :--- | :--- |\n` +
+      `${rows}\n\n` +
+      `📊 **Total:** **${formattedTotal}** across **${displayList.length}** invoice(s).`;
+
+    return {
+      reply,
+      invoices: displayList
+    };
+  }
+
+  extractInvoiceLookupTarget(userMessage = '') {
+    const msg = (userMessage || '').trim();
+    if (!msg) return '';
+
+    // Pattern 1: "avani shah's invoice" or "give me avani shah's invoice"
+    const posMatch = msg.match(/(?:give|show|get|view|fetch|find|display|check)?\s*(?:me\s+)?([A-Za-z0-9\s._-]+?)(?:['’]s)\s+(?:invoices?|bills?)/i);
+    if (posMatch && posMatch[1]) {
+      const c = posMatch[1].replace(/\b(give|show|get|view|fetch|find|display|check|me|the|a|an)\b/gi, '').trim();
+      if (c.length > 1) return c;
+    }
+
+    // Pattern 2: "invoice of avani shah" / "invoice for avani shah"
+    const ofMatch = msg.match(/(?:invoices?|bills?)\s+(?:of|for|about)\s+([A-Za-z0-9\s._-]+)/i);
+    if (ofMatch && ofMatch[1]) {
+      const c = ofMatch[1].trim();
+      if (c.length > 1) return c;
+    }
+
+    // Pattern 3: Use generic extractTargetCustomerName
+    const generic = this.extractTargetCustomerName(userMessage);
+    if (generic) return generic;
+
+    return '';
+  }
+
+  /**
+   * 📄 Single Invoice Lookup by Customer or Invoice Name
+   */
+  async handleCustomerInvoiceLookup(session, context, userMessage = '') {
+    const target = this.extractInvoiceLookupTarget(userMessage);
+    let inv = null;
+
+    if (target) {
+      console.log(`🔍 Looking up invoice for "${target}" in Dynamics 365...`);
+      inv = await dynamicsService.findInvoiceByQuery(target);
+    } else if (context.recordId || session.currentRecordId) {
+      const id = context.recordId || session.currentRecordId;
+      inv = await this.resolveInvoiceData(id, context);
+    } else {
+      inv = await dynamicsService.getLatestInvoice();
+    }
+
+    if (!inv) {
+      return {
+        reply: `🔍 **No Invoice Found for "${target || 'requested record'}" in Dynamics 365.**\n\n` +
+          `* Please verify the customer name or invoice number in Dynamics 365.\n` +
+          `* You can also ask **"give me list of invoice"** to view all existing invoices.`
+      };
+    }
+
+    // Update session context to this record so follow-up actions (preview PDF, email, mark paid) apply
+    if (inv.invoiceid) session.currentRecordId = inv.invoiceid;
+    if (inv.name) session.currentRecordName = inv.name;
+    if (inv.customerName) session.customerName = inv.customerName;
+    if (inv.totalamount) session.totalAmount = inv.totalamount;
+
+    const isPaid = (inv.statecode === 2 || inv.statuscode === 100001 || String(inv.status).toUpperCase() === 'PAID');
+    const amtStr = '₹' + Number(inv.totalamount || 0).toLocaleString('en-IN');
+    const statusBadge = isPaid ? '✅ Paid' : '⏳ Active / Due';
+    const invNum = inv.invoicenumber || 'N/A';
+    const cust = inv.customerName || target || 'Valued Customer';
+    const dueStr = inv.dueDate || '-';
+    const invName = inv.name || `Sales Invoice - ${cust}`;
+
+    let itemsSummary = '';
+    if (inv.items && inv.items.length > 0) {
+      itemsSummary = '\n\n**Products / Line Items:**\n' + inv.items.map(item =>
+        `• **${item.description || 'Product'}** (Qty: ${item.qty || 1}, Rate: ₹${Number(item.unitPrice || 0).toLocaleString('en-IN')})`
+      ).join('\n');
+    }
+
+    const activeRecordName = context.recordName || session.currentRecordName || '';
+    let crossNotice = '';
+    if (activeRecordName && !activeRecordName.toLowerCase().includes(cust.toLowerCase())) {
+      crossNotice = `\n\n*(Note: Your screen is currently on **${activeRecordName}**. Showing details for **${cust}** from Dynamics 365).*`;
+    }
+
+    const reply = `### 📄 Invoice Overview: ${invName}\n\n` +
+      `I have retrieved the details for **${cust}** from Microsoft Dynamics 365:\n\n` +
+      `| Field | Details |\n` +
+      `| :--- | :--- |\n` +
+      `| **Invoice Name** | ${invName} |\n` +
+      `| **Invoice No** | \`${invNum}\` |\n` +
+      `| **Customer** | ${cust} |\n` +
+      `| **Total Amount** | **${amtStr}** |\n` +
+      `| **Payment Status** | ${statusBadge} |\n` +
+      `| **Due Date** | ${dueStr} |` +
+      itemsSummary +
+      crossNotice;
+
+    return {
+      reply,
+      invoice: inv
     };
   }
 
@@ -588,23 +816,10 @@ class InvoiceBrain {
 
     let reply = '';
     if (taxAmount > 0) {
-      const cgst = Math.round(taxAmount / 2);
-      const sgst = Math.round(taxAmount / 2);
       const taxRate = Math.round((taxAmount / (baseAmount || 1)) * 100);
-
-      reply = `✅ **Tax Audit Report for \`${invoiceNumber}\`**\n\n` +
-        `* 👤 **Customer:** **${customer}**\n` +
-        `* 💵 **Base Amount:** ₹${baseAmount.toLocaleString('en-IN')}\n` +
-        `* 🏷️ **GST Applied (${taxRate}%):** ₹${taxAmount.toLocaleString('en-IN')} *(CGST: ₹${cgst.toLocaleString('en-IN')} + SGST: ₹${sgst.toLocaleString('en-IN')})*\n` +
-        `* 💰 **Total Payable:** **₹${totalAmount.toLocaleString('en-IN')}**\n\n` +
-        `🟢 **Compliance Status:** 100% Tax Compliant & Ready for Client Dispatch!`;
+      reply = `✅ **GST Audit (#${invoiceNumber}):** Tax ₹${taxAmount.toLocaleString('en-IN')} (${taxRate}% GST) on Base ₹${baseAmount.toLocaleString('en-IN')}. Total: **₹${totalAmount.toLocaleString('en-IN')}** (Compliant).`;
     } else {
-      reply = `ℹ️ **Tax Audit Report for \`${invoiceNumber}\`**\n\n` +
-        `* 👤 **Customer:** **${customer}**\n` +
-        `* 💵 **Detail Amount (Base Price):** **₹${baseAmount.toLocaleString('en-IN')}**\n` +
-        `* 🏷️ **Total Tax:** **₹0.00 (No Tax / 0% GST)**\n` +
-        `* 💰 **Total Payable:** **₹${totalAmount.toLocaleString('en-IN')}**\n\n` +
-        `🟢 **Compliance Status:** Zero-tax invoice (No GST charged on this record in Dynamics 365).`;
+      reply = `ℹ️ **GST Audit (#${invoiceNumber}):** Zero-tax invoice (₹0.00 tax / 0% GST) for **${customer}**. Total: **₹${totalAmount.toLocaleString('en-IN')}**.`;
     }
 
     return {
@@ -664,8 +879,8 @@ class InvoiceBrain {
     const targetCustomer = this.extractTargetCustomerName(userMessage);
     const activeCustomer = context.customerName || session.customerName || '';
 
-    // If user specifically asked about a customer that does NOT match the currently open form:
-    if (targetCustomer && activeCustomer && !activeCustomer.toLowerCase().includes(targetCustomer.toLowerCase()) && !targetCustomer.toLowerCase().includes(activeCustomer.toLowerCase())) {
+    // If user specifically asked about a customer:
+    if (targetCustomer) {
       console.log(`🔍 Checking overdue status for targeted customer "${targetCustomer}" in Dynamics 365...`);
       const matches = await dynamicsService.searchInvoicesByCustomer(targetCustomer);
 
@@ -908,7 +1123,7 @@ class InvoiceBrain {
     };
   }
 
-  async resolveQuoteData(quoteId, context) {
+  async resolveQuoteData(quoteId, context = {}) {
     if (quoteId) {
       try {
         const live = await dynamicsService.getQuoteById(quoteId);
@@ -917,17 +1132,28 @@ class InvoiceBrain {
         console.warn('Could not fetch quote by ID:', e.message);
       }
     }
+
+    // Try finding by context name or customer from Dynamics 365
+    const target = context.recordName || context.customerName;
+    if (target) {
+      try {
+        const found = await dynamicsService.findQuoteByQuery(target);
+        if (found) return found;
+      } catch (_) {}
+    }
+
+    const cleanAmount = context.totalAmount ? (Number(String(context.totalAmount).replace(/[^0-9.]/g, '')) || 0) : 0;
     return {
-      quoteid: quoteId || 'QUO-01000-W1C9W3',
-      name: context.recordName || 'Enterprise AI Suite - Rina Patel',
-      quotenumber: 'QUO-01000-W1C9W3',
-      customerName: context.customerName || 'Rina Patel',
-      customerEmail: context.email || 'Rina@Webtual.com',
-      company: 'Webtual Technology',
-      totalamount: context.totalAmount ? Number(String(context.totalAmount).replace(/[^0-9.]/g, '')) : 25000,
+      quoteid: quoteId || null,
+      name: context.recordName || 'Quotation',
+      quotenumber: 'QUO-' + (quoteId ? String(quoteId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() : 'ACTIVE'),
+      customerName: context.customerName || 'Valued Customer',
+      customerEmail: context.email || '',
+      company: '',
+      totalamount: cleanAmount,
       discountPercent: 0,
       items: [
-        { description: 'AI Software Suite License', qty: 1, unitPrice: 25000, total: 25000 }
+        { description: context.recordName || 'Quotation Proposal Solution', qty: 1, unitPrice: cleanAmount, total: cleanAmount }
       ]
     };
   }
@@ -977,14 +1203,203 @@ class InvoiceBrain {
   }
 
 
-  async callGemini(session, userMessage, context) {
-    const model = this.genAI.getGenerativeModel({
-      model: 'gemini-3.1-flash-lite',
-      systemInstruction: INVOICE_COPILOT_PLAYBOOK + `\n\n[Active CRM Context]: Entity: "${session.currentEntity}", Record: "${context.recordName || session.currentRecordName || 'Open Record'}", Customer: "${context.customerName || 'Client'}", Amount: ₹${context.totalAmount || '29,500'}`
-    });
+  getGeminiTools() {
+    return [
+      {
+        functionDeclarations: [
+          {
+            name: 'get_invoice_details',
+            description: 'Fetch and view the details of an invoice from Microsoft Dynamics 365 CRM by customer name, invoice name, or invoice number. Use this whenever the user asks for a specific customer or invoice (e.g. "give me Avani Shah\'s invoice", "show invoice for Ankit", "Avani nu bill").',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                query: {
+                  type: 'STRING',
+                  description: 'Customer full name, invoice name, or invoice number (e.g. "Avani Shah", "INV-01043", "Ankit")'
+                }
+              },
+              required: ['query']
+            }
+          },
+          {
+            name: 'list_all_invoices',
+            description: 'List all invoices from Microsoft Dynamics 365 CRM. Can optionally filter by "all", "paid", or "pending". Use this when user asks for "list of invoices", "all invoices", "show all bills", or "bdha invoice nu list".',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                statusFilter: {
+                  type: 'STRING',
+                  description: 'Filter invoices: "all", "paid", or "pending" (default "all")'
+                }
+              }
+            }
+          },
+          {
+            name: 'convert_quote_to_invoice',
+            description: 'Convert a Quote in Microsoft Dynamics 365 into an official Tax Invoice. Accepts optional customerName or quote query, and optional discount percentage.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                quoteQuery: {
+                  type: 'STRING',
+                  description: 'Customer name or Quote number to convert (e.g. "Rina Patel", "QUO-01002")'
+                },
+                discountPercent: {
+                  type: 'NUMBER',
+                  description: 'Discount percentage to apply (default 0)'
+                }
+              }
+            }
+          },
+          {
+            name: 'generate_and_email_invoice',
+            description: 'Generate the official PDF tax invoice and email it to the client via SMTP from Dynamics 365.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                customerName: {
+                  type: 'STRING',
+                  description: 'Customer or recipient name'
+                },
+                recipientEmail: {
+                  type: 'STRING',
+                  description: 'Recipient email address if specified by user'
+                }
+              }
+            }
+          },
+          {
+            name: 'generate_invoice_pdf',
+            description: 'Generate, preview, or provide download link for the official branded PDF Tax Invoice.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                query: {
+                  type: 'STRING',
+                  description: 'Customer name or invoice number (optional)'
+                }
+              }
+            }
+          },
+          {
+            name: 'mark_invoice_as_paid',
+            description: 'Mark an invoice as Paid/Settled in Microsoft Dynamics 365 Dataverse.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                customerName: {
+                  type: 'STRING',
+                  description: 'Customer name or invoice number to mark as paid'
+                }
+              }
+            }
+          },
+          {
+            name: 'audit_invoice_compliance',
+            description: 'Audit an invoice for GST/tax compliance, mandatory legal fields, and calculation accuracy.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                customerName: {
+                  type: 'STRING',
+                  description: 'Customer name or invoice number to audit'
+                }
+              }
+            }
+          },
+          {
+            name: 'check_outstanding_balance',
+            description: 'Check outstanding balance, pending payments, overdue bills, or payment summary in Dynamics 365.',
+            parameters: {
+              type: 'OBJECT',
+              properties: {
+                customerName: {
+                  type: 'STRING',
+                  description: 'Specific customer name to check, or leave empty for total balance across all clients'
+                }
+              }
+            }
+          }
+        ]
+      }
+    ];
+  }
 
-    const chat = model.startChat({ history: [] });
-    const result = await chat.sendMessage(userMessage);
+  async callGemini(session, userMessage, context) {
+    const primaryModel = 'gemini-3.1-flash-lite';
+    const fallbackCandidates = [primaryModel, 'gemini-3.1-flash-lite-preview', 'gemini-3.8-flash'];
+
+    let systemInstruction = INVOICE_COPILOT_PLAYBOOK;
+    const activeRec = context.recordName || session.currentRecordName;
+    if (activeRec) {
+      systemInstruction += `\n\n[Active CRM Context]: Entity: "${session.currentEntity || 'invoice'}", Record: "${activeRec}", Customer: "${context.customerName || session.customerName || 'Client'}", Amount: ₹${context.totalAmount || session.totalAmount || '70,000'}`;
+    }
+
+    let result = null;
+    let lastError = null;
+
+    for (const candidateModel of fallbackCandidates) {
+      try {
+        const model = this.genAI.getGenerativeModel({
+          model: candidateModel,
+          systemInstruction,
+          tools: this.getGeminiTools()
+        });
+        const chat = model.startChat({ history: [] });
+        result = await chat.sendMessage(userMessage);
+        break;
+      } catch (err) {
+        lastError = err;
+        console.warn(`⚠️ Gemini model [${candidateModel}] failed (${err.message}). Trying next fallback model...`);
+      }
+    }
+
+    if (!result) {
+      throw lastError || new Error('All Gemini fallback models failed.');
+    }
+
+    const calls = result.response.functionCalls ? result.response.functionCalls() : [];
+
+    if (calls && calls.length > 0) {
+      const call = calls[0];
+      const args = call.args || {};
+      console.log(`🤖 Gemini Function Call triggered in Invoice Agent: ${call.name}`, args);
+
+      if (call.name === 'get_invoice_details') {
+        const q = args.query || userMessage;
+        return await this.handleCustomerInvoiceLookup(session, context, q);
+      }
+
+      if (call.name === 'list_all_invoices') {
+        const filter = args.statusFilter || 'all';
+        return await this.handleListInvoices(session, context, filter);
+      }
+
+      if (call.name === 'convert_quote_to_invoice') {
+        return await this.handleConvertQuote(session, context, args.quoteQuery || userMessage);
+      }
+
+      if (call.name === 'generate_and_email_invoice') {
+        return await this.handleEmailInvoice(session, context, userMessage);
+      }
+
+      if (call.name === 'generate_invoice_pdf') {
+        return await this.handlePreviewPdf(session, context, userMessage);
+      }
+
+      if (call.name === 'mark_invoice_as_paid') {
+        return await this.handleMarkPaid(session, context, args.customerName || userMessage);
+      }
+
+      if (call.name === 'audit_invoice_compliance') {
+        return await this.handleAuditCompliance(session, context, args.customerName || userMessage);
+      }
+
+      if (call.name === 'check_outstanding_balance') {
+        return await this.handleOutstandingSummary(session, context, args.customerName || '', userMessage);
+      }
+    }
+
     const reply = result.response.text();
     return { reply };
   }
