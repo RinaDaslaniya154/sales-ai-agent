@@ -17,7 +17,7 @@ if (typeof window !== "undefined") {
 }
 
 // Active Cloudflare Tunnel Live URL for Invoice AI Agent (Superfast Local Server)
-InvoiceAIAgent.WIDGET_URL = "https://roots-earn-lottery-mhz.trycloudflare.com/invoice"
+InvoiceAIAgent.WIDGET_URL = "https://lung-urge-portsmouth-officially.trycloudflare.com/invoice";
 
 InvoiceAIAgent.currentFormContext = null;
 InvoiceAIAgent.watcherInterval = null;
