@@ -2,14 +2,89 @@
 <html>
 
 <head>
-  <title>Test iFrame</title>
+  <meta charset="utf-8" />
+  <title>Sales & Invoice Agents - Cloudflare Live Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 24px;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    h2 {
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #64748b;
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .link-btn {
+      font-size: 12px;
+      color: #2563eb;
+      text-decoration: none;
+      background: #eff6ff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .link-btn:hover {
+      background: #dbeafe;
+    }
+    iframe {
+      width: 420px;
+      height: 640px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      display: block;
+    }
+  </style>
 </head>
 
 <body>
-  <h2>Local iframe test</h2>
-  <iframe src="https://lung-urge-portsmouth-officially.trycloudflare.com/invoice" width="400" height="600"
-    style="border: 2px solid green;">
-  </iframe>
+  <h2>Live Cloudflare Tunnel Preview</h2>
+  <p class="subtitle">Both AI Agents connected to Dynamics 365 Dataverse via Cloudflare Tunnel</p>
+
+  <div class="grid">
+    <!-- 1. Sales Agent -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">💼 Sales AI Agent</span>
+        <a class="link-btn" href="https://moscow-configuration-basics-headline.trycloudflare.com/widget" target="_blank">Open Full Tab ↗</a>
+      </div>
+      <iframe src="https://moscow-configuration-basics-headline.trycloudflare.com/widget" allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+
+    <!-- 2. Invoice Agent -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📑 Invoice AI Agent</span>
+        <a class="link-btn" href="https://moscow-configuration-basics-headline.trycloudflare.com/invoice" target="_blank">Open Full Tab ↗</a>
+      </div>
+      <iframe src="https://moscow-configuration-basics-headline.trycloudflare.com/invoice" allow="clipboard-read; clipboard-write"></iframe>
+    </div>
+  </div>
 </body>
 
 </html>

@@ -17,8 +17,11 @@ if (typeof window !== "undefined") {
   window.SalesAIAgent = SalesAIAgent;
 }
 
-// Active Cloudflare Tunnel Live URL for Sales AI Agent Widget (Superfast Local Server)
-SalesAIAgent.WIDGET_URL = "https://lung-urge-portsmouth-officially.trycloudflare.com/widget";
+// Active Cloudflare Tunnel Live URLs
+SalesAIAgent.BASE_TUNNEL_URL = "https://moscow-configuration-basics-headline.trycloudflare.com";
+SalesAIAgent.SALES_AGENT_URL = "https://moscow-configuration-basics-headline.trycloudflare.com/widget";
+SalesAIAgent.INVOICE_AGENT_URL = "https://moscow-configuration-basics-headline.trycloudflare.com/invoice";
+SalesAIAgent.WIDGET_URL = SalesAIAgent.SALES_AGENT_URL;
 
 SalesAIAgent.currentFormContext = null;
 

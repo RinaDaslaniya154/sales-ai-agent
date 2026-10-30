@@ -16,11 +16,39 @@ if (typeof window !== "undefined") {
   window.InvoiceAIAgent = InvoiceAIAgent;
 }
 
-// Active Cloudflare Tunnel Live URL for Invoice AI Agent (Superfast Local Server)
-InvoiceAIAgent.WIDGET_URL = "https://lung-urge-portsmouth-officially.trycloudflare.com/invoice";
+// Active Cloudflare Tunnel Live URLs
+InvoiceAIAgent.BASE_TUNNEL_URL = "https://moscow-configuration-basics-headline.trycloudflare.com";
+InvoiceAIAgent.SALES_AGENT_URL = "https://moscow-configuration-basics-headline.trycloudflare.com/widget";
+InvoiceAIAgent.INVOICE_AGENT_URL = "https://moscow-configuration-basics-headline.trycloudflare.com/invoice";
+InvoiceAIAgent.WIDGET_URL = InvoiceAIAgent.INVOICE_AGENT_URL;
 
 InvoiceAIAgent.currentFormContext = null;
 InvoiceAIAgent.watcherInterval = null;
+
+// ⚡ GLOBAL LISTENER: Immediately listen for record click from ANY page (Grid View OR Form View)
+if (topWin && !topWin.__d365InvoiceMsgListenerAttached) {
+  topWin.__d365InvoiceMsgListenerAttached = true;
+  topWin.addEventListener("message", function (event) {
+    if (!event || !event.data) return;
+
+    if (event.data.action === "open_d365_record") {
+      try {
+        var xrm = (topWin && topWin.Xrm) || (window.parent && window.parent.Xrm) || window.Xrm;
+        if (xrm && xrm.Navigation && typeof xrm.Navigation.openForm === "function") {
+          var cleanId = String(event.data.entityId || '').replace(/[{}]/g, '').trim();
+          xrm.Navigation.openForm({
+            entityName: event.data.entityName || "invoice",
+            entityId: cleanId,
+            openInNewWindow: false
+          });
+          return;
+        }
+      } catch (e) {
+        console.warn("openForm error:", e);
+      }
+    }
+  });
+}
 
 /**
  * Dynamics 365 Form OnLoad / Ribbon Handler
@@ -49,9 +77,32 @@ InvoiceAIAgent.onLoad = function (executionContext, selectedControl) {
 InvoiceAIAgent.closeNativeSidePane = function () {
   try {
     var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (topWin && topWin.Xrm);
-    if (xrm && xrm.App && xrm.App.sidePanes && xrm.App.sidePanes.getPane) {
-      var pane = xrm.App.sidePanes.getPane("InvoiceAIAgentSidePane");
-      if (pane && pane.close) pane.close();
+    if (xrm && xrm.App && xrm.App.sidePanes) {
+      if (typeof xrm.App.sidePanes.getSelectedPane === "function") {
+        var sp = xrm.App.sidePanes.getSelectedPane();
+        if (sp && sp.close) {
+          try { sp.close(); } catch (err) { }
+        }
+      }
+      if (typeof xrm.App.sidePanes.getAllPanes === "function") {
+        var panes = xrm.App.sidePanes.getAllPanes();
+        if (panes) {
+          panes.forEach(function (p) {
+            if (p && p.close) {
+              try { p.close(); } catch (err) { }
+            }
+          });
+        }
+      }
+      if (typeof xrm.App.sidePanes.getPane === "function") {
+        var pane = xrm.App.sidePanes.getPane("InvoiceAIAgentSidePane");
+        if (pane && pane.close) pane.close();
+      }
+      try {
+        if (typeof xrm.App.sidePanes.state !== "undefined") {
+          xrm.App.sidePanes.state = 0;
+        }
+      } catch (err) { }
     }
   } catch (e) { }
 };
@@ -68,18 +119,20 @@ InvoiceAIAgent.refreshDrawerContext = function (forcedContext) {
 
     var ctx = forcedContext || InvoiceAIAgent.getContext();
     var activeIdentifier = ctx.recordId || ctx.customerName || ctx.recordName || "";
-    if (!activeIdentifier || activeIdentifier === "All Invoices") return;
 
-    var targetUrl = InvoiceAIAgent.WIDGET_URL +
-      "?id=" + encodeURIComponent(ctx.recordId || "") +
-      "&name=" + encodeURIComponent(ctx.recordName || "") +
-      "&customer=" + encodeURIComponent(ctx.customerName || "") +
-      "&total=" + encodeURIComponent(ctx.totalAmount || "") +
-      "&duedate=" + encodeURIComponent(ctx.dueDate || "") +
-      "&type=" + encodeURIComponent(ctx.entityName || "invoice");
+    var targetUrl = InvoiceAIAgent.WIDGET_URL;
+    if (activeIdentifier && activeIdentifier !== "All Invoices") {
+      targetUrl +=
+        "?id=" + encodeURIComponent(ctx.recordId || "") +
+        "&name=" + encodeURIComponent(ctx.recordName || "") +
+        "&customer=" + encodeURIComponent(ctx.customerName || "") +
+        "&total=" + encodeURIComponent(ctx.totalAmount || "") +
+        "&duedate=" + encodeURIComponent(ctx.dueDate || "") +
+        "&type=" + encodeURIComponent(ctx.entityName || "invoice");
+    }
 
     var lastIdentifier = drawer.getAttribute("data-synced-identifier") || "";
-    if (activeIdentifier !== lastIdentifier) {
+    if (activeIdentifier !== lastIdentifier || !frame.src || frame.src === "about:blank") {
       drawer.setAttribute("data-synced-identifier", activeIdentifier);
       drawer.setAttribute("data-synced-id", ctx.recordId || "");
       frame.src = targetUrl;
@@ -97,7 +150,12 @@ InvoiceAIAgent.isInvoiceActive = function () {
     var topWin = window.top || window;
     var href = (topWin.location && topWin.location.href) || "";
 
-    // 1. If explicitly navigated to other entities (Leads, Contacts, Accounts, etc.) -> Return false!
+    // 1. If on Grid / List view (entitylist), FAB should NOT stay on screen!
+    if (href.indexOf("pagetype=entitylist") !== -1) {
+      return false;
+    }
+
+    // 2. If explicitly navigated to other entities (Leads, Contacts, Accounts, etc.) -> Return false!
     if (href.indexOf("etn=lead") !== -1 ||
       href.indexOf("etn=account") !== -1 ||
       href.indexOf("etn=contact") !== -1 ||
@@ -105,12 +163,12 @@ InvoiceAIAgent.isInvoiceActive = function () {
       return false;
     }
 
-    // 2. If URL contains etn=invoice or etn=quote (Works for BOTH pagetype=entitylist AND pagetype=entityrecord!)
-    if (href.indexOf("etn=invoice") !== -1 || href.indexOf("etn=quote") !== -1) {
+    // 3. Active only on Invoice or Quote Record Form (entityrecord)
+    if (href.indexOf("pagetype=entityrecord") !== -1 && (href.indexOf("invoice") !== -1 || href.indexOf("quote") !== -1)) {
       return true;
     }
 
-    // 3. Check CRM formContext if available
+    // 4. Check CRM formContext if available
     var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (window.top && window.top.Xrm);
     var fc = InvoiceAIAgent.currentFormContext || (xrm && xrm.Page);
     if (fc && fc.data && fc.data.entity) {
@@ -118,11 +176,6 @@ InvoiceAIAgent.isInvoiceActive = function () {
       if (ent === "invoice" || ent === "quote") {
         return true;
       }
-    }
-
-    // 4. Fallback check for URL keywords
-    if (href.indexOf("invoice") !== -1 || href.indexOf("quote") !== -1) {
-      return true;
     }
 
     return false;
@@ -175,10 +228,14 @@ InvoiceAIAgent.startNavigationWatcher = function () {
       } catch (ex) { }
     };
 
-    // Global active check on topWin: supports BOTH entitylist and entityrecord
+    // Global active check on topWin: active ONLY on record form
     topWin.__isInvoiceActive = function () {
       try {
         var href = (topWin.location && topWin.location.href) || "";
+        // If on Grid / List view (entitylist), FAB must NOT stay!
+        if (href.indexOf("pagetype=entitylist") !== -1) {
+          return false;
+        }
         // Only return false if explicitly on other known entities
         if (href.indexOf("etn=lead") !== -1 ||
           href.indexOf("etn=account") !== -1 ||
@@ -186,22 +243,117 @@ InvoiceAIAgent.startNavigationWatcher = function () {
           href.indexOf("etn=opportunity") !== -1) {
           return false;
         }
-        // Active if on invoice or quote (grid or form)
-        if (href.indexOf("invoice") !== -1 || href.indexOf("quote") !== -1) {
+        // Active ONLY on invoice or quote record form
+        if (href.indexOf("pagetype=entityrecord") !== -1 && (href.indexOf("invoice") !== -1 || href.indexOf("quote") !== -1)) {
           return true;
         }
-        // Check Xrm Page entity name if available
         var xrm = topWin.Xrm || (topWin.parent && topWin.parent.Xrm);
         if (xrm && xrm.Page && xrm.Page.data && xrm.Page.data.entity) {
           var ent = xrm.Page.data.entity.getEntityName();
           if (ent === "invoice" || ent === "quote") return true;
         }
-        // Default to keeping active during CRM internal page transitions
-        return true;
+        return false;
       } catch (ex) {
-        return true;
+        return false;
       }
     };
+
+    // Auto-cleanup on Form unload (triggers instantly when user clicks Back ←)
+    if (typeof window !== "undefined") {
+      var handleUnload = function () {
+        try {
+          if (topWin && topWin.__d365InvoiceCleanup) {
+            topWin.__d365InvoiceCleanup();
+          }
+        } catch (e) { }
+      };
+      window.addEventListener("unload", handleUnload);
+      window.addEventListener("beforeunload", handleUnload);
+
+      // Listen for cross-origin requests from widget iframe (Close button & Record Navigation)
+      topWin.addEventListener("message", function (event) {
+        if (!event || !event.data) return;
+
+        // Open CRM Record directly in Dynamics 365 in-place without page reload
+        if (event.data.action === "open_d365_record") {
+          try {
+            var xrm = (topWin && topWin.Xrm) || window.Xrm;
+            if (xrm && xrm.Navigation && typeof xrm.Navigation.openForm === "function") {
+              var cleanId = String(event.data.entityId || '').replace(/[{}]/g, '').trim();
+              xrm.Navigation.openForm({
+                entityName: event.data.entityName || "invoice",
+                entityId: cleanId,
+                openInNewWindow: false
+              });
+              return;
+            }
+          } catch (e) {
+            console.warn("openForm error:", e);
+          }
+          return;
+        }
+
+        if (event.data.action === "close_d365_invoice_sidepane" || event.data === "close_d365_invoice_sidepane") {
+          var targetDoc = topWin.document || document;
+          var existingPane = targetDoc.getElementById("d365-invoice-ai-sidepane");
+          if (existingPane) {
+            existingPane.style.transform = "translateX(100%)";
+            existingPane.style.pointerEvents = "none";
+          }
+          if (typeof topWin.__d365SqueezePage === "function") {
+            topWin.__d365SqueezePage(false);
+          }
+          var drawer = targetDoc.getElementById("d365-invoice-ai-drawer");
+          if (drawer) {
+            drawer.setAttribute("data-open", "false");
+            drawer.style.display = "none";
+            drawer.style.opacity = "0";
+          }
+          var fab = targetDoc.getElementById("d365-invoice-ai-fab");
+          if (fab) {
+            fab.innerHTML = `
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2L12 2Z" fill="white"/>
+                <path d="M19 16L19.9 19.1L23 20L19.9 20.9L19 24L18.1 20.9L15 20L18.1 19.1L19 16Z" fill="#FDE047"/>
+              </svg>
+            `;
+            fab.title = "Invoice AI Agent";
+          }
+          if (typeof InvoiceAIAgent.closeNativeSidePane === "function") {
+            InvoiceAIAgent.closeNativeSidePane();
+          }
+        }
+      });
+
+      // Global Capturing Click Interceptor: Instantly closes sidepane when red-circled top-right X is clicked
+      topWin.document.addEventListener("click", function (e) {
+        try {
+          var target = e.target;
+          var btn = target && (target.closest ? target.closest('button, [role="button"]') : null);
+          if (btn) {
+            var rect = btn.getBoundingClientRect();
+            // Check if clicked in top-right header area (within 130px from right edge, top 120px)
+            var isTopRight = (rect.right > (topWin.innerWidth - 130)) && (rect.top < 120);
+            var btnText = (btn.innerText || "").trim();
+            var aria = (btn.getAttribute("aria-label") || btn.getAttribute("title") || btn.getAttribute("data-id") || "").toLowerCase();
+            var isCloseButton = aria.indexOf("close") !== -1 || btnText === "✕" || btnText === "×" || btnText === "X";
+
+            if (isTopRight && isCloseButton) {
+              console.log("Sidepane close triggered via top-right X click interceptor!");
+              InvoiceAIAgent.closeNativeSidePane();
+              var p = topWin.document.getElementById("d365-invoice-ai-sidepane");
+              if (p) {
+                p.style.transform = "translateX(100%)";
+                p.style.pointerEvents = "none";
+              }
+              if (typeof topWin.__d365SqueezePage === "function") {
+                topWin.__d365SqueezePage(false);
+              }
+            }
+          }
+        } catch (ex) { }
+      }, true); // Capturing phase = triggers first before any Dynamics 365 logic!
+    }
 
     // 1. Clear any existing watcher on topWin
     if (topWin.__d365InvoiceWatcher) {
@@ -209,28 +361,17 @@ InvoiceAIAgent.startNavigationWatcher = function () {
       topWin.__d365InvoiceWatcher = null;
     }
 
-    // Debounce counter to prevent accidental flickering
-    var nonInvoiceCount = 0;
-
-    // 2. Stable periodic watcher (Smooth 1.2s check, zero flickering)
+    // 2. Stable periodic watcher (Clean up immediately when leaving record)
     topWin.__d365InvoiceWatcher = topWin.setInterval(function () {
       try {
         var isActive = topWin.__isInvoiceActive && topWin.__isInvoiceActive();
 
         if (!isActive) {
-          nonInvoiceCount++;
-          // Only clean up after 3 consecutive negative checks (approx 3.6s)
-          // so temporary CRM internal URL transitions NEVER cause flickering
-          if (nonInvoiceCount >= 3) {
-            topWin.__d365InvoiceCleanup();
-            topWin.clearInterval(topWin.__d365InvoiceWatcher);
-            topWin.__d365InvoiceWatcher = null;
-          }
+          topWin.__d365InvoiceCleanup();
+          topWin.clearInterval(topWin.__d365InvoiceWatcher);
+          topWin.__d365InvoiceWatcher = null;
           return;
         }
-
-        // Reset debounce count since we are on invoice
-        nonInvoiceCount = 0;
 
         var doc = topWin.document;
         var fab = doc.getElementById("d365-invoice-ai-fab");
@@ -431,6 +572,15 @@ InvoiceAIAgent.toggleDrawer = function (primaryControl, selectedControl) {
     drawer.setAttribute("data-open", willOpen ? "true" : "false");
 
     if (willOpen) {
+      // 0. Close full-height sidepane if open so floating card takes priority
+      var sidePane = targetDoc.getElementById("d365-invoice-ai-sidepane");
+      if (sidePane) {
+        sidePane.style.transform = "translateX(100%)";
+        if (typeof topWin.__d365SqueezePage === "function") {
+          topWin.__d365SqueezePage(false);
+        }
+      }
+
       // 1. Refresh active Invoice context
       InvoiceAIAgent.refreshDrawerContext();
 
@@ -498,7 +648,7 @@ InvoiceAIAgent.closeDrawer = function () {
 };
 
 /**
- * Initialize Floating Button and Floating Card UI (Matching img2)
+ * Initialize Floating Action Button (Purple) + Floating Drawer on Invoice/Quote pages
  */
 InvoiceAIAgent.initUI = function () {
   try {
@@ -511,15 +661,18 @@ InvoiceAIAgent.initUI = function () {
     // If elements already exist, re-bind click handler
     if (existingFab && existingDrawer) {
       existingFab.style.display = "flex";
+      existingFab.style.opacity = "1";
       existingFab.onclick = function (e) {
         if (e && e.stopPropagation) e.stopPropagation();
         var agent = topWin.__InvoiceAIAgent || topWin.InvoiceAIAgent || window.InvoiceAIAgent || InvoiceAIAgent;
-        agent.toggleDrawer();
+        if (agent && typeof agent.toggleDrawer === "function") {
+          agent.toggleDrawer();
+        }
       };
       return;
     }
 
-    // 1. Create Floating Action Button (FAB)
+    // 1. Create Floating Action Button (FAB) — Purple
     var fab = targetDoc.createElement("div");
     fab.id = "d365-invoice-ai-fab";
     fab.title = "Invoice AI Agent";
@@ -556,20 +709,18 @@ InvoiceAIAgent.initUI = function () {
       fab.style.transform = "scale(1) translateY(0px)";
       fab.style.boxShadow = "0 6px 20px rgba(79, 70, 229, 0.45), 0 2px 6px rgba(0,0,0,0.18)";
     };
-    fab.onmousedown = function () {
-      fab.style.transform = "scale(0.95)";
-    };
-    fab.onmouseup = function () {
-      fab.style.transform = "scale(1.1) translateY(-2px)";
-    };
+    fab.onmousedown = function () { fab.style.transform = "scale(0.95)"; };
+    fab.onmouseup = function () { fab.style.transform = "scale(1.1) translateY(-2px)"; };
 
     fab.onclick = function (e) {
       if (e && e.stopPropagation) e.stopPropagation();
       var agent = topWin.__InvoiceAIAgent || topWin.InvoiceAIAgent || window.InvoiceAIAgent || InvoiceAIAgent;
-      agent.toggleDrawer();
+      if (agent && typeof agent.toggleDrawer === "function") {
+        agent.toggleDrawer();
+      }
     };
 
-    // 2. Create Floating Drawer Container (Exact matching img2)
+    // 2. Create Floating Drawer Container
     var drawer = targetDoc.createElement("div");
     drawer.id = "d365-invoice-ai-drawer";
     drawer.setAttribute("data-open", "false");
@@ -607,12 +758,10 @@ InvoiceAIAgent.initUI = function () {
     });
 
     drawer.appendChild(iframe);
-
-    // Append to document body
     targetDoc.body.appendChild(drawer);
     targetDoc.body.appendChild(fab);
 
-    console.log("Invoice AI Agent Floating Card UI (img2 style) initialized successfully.");
+    console.log("Invoice AI Agent FAB initialized.");
   } catch (err) {
     console.warn("initUI error:", err);
   }
@@ -647,6 +796,17 @@ InvoiceAIAgent.openDockedSidePane = function (targetUrl) {
   try {
     var topWin = window.top || window;
     var targetDoc = topWin.document || document;
+
+    // Ensure purple floating button remains visible alongside the sidepane
+    if (!targetDoc.getElementById("d365-invoice-ai-fab") && typeof InvoiceAIAgent.initUI === "function") {
+      InvoiceAIAgent.initUI();
+    }
+    var currentFab = targetDoc.getElementById("d365-invoice-ai-fab");
+    if (currentFab) {
+      currentFab.style.display = "flex";
+      currentFab.style.opacity = "1";
+    }
+
     var existingPane = targetDoc.getElementById("d365-invoice-ai-sidepane");
 
     // Squeeze / Push main Dynamics 365 page to the left (Exact matching Copilot img2 layout!)
@@ -663,6 +823,16 @@ InvoiceAIAgent.openDockedSidePane = function (targetUrl) {
           mainEl.style.marginRight = enable ? "440px" : "0px";
         }
       } catch (e) { }
+    }
+    topWin.__d365SqueezePage = squeezePage;
+
+    // Toggle: if already open, close it!
+    if (existingPane && (existingPane.style.transform === "translateX(0px)" || existingPane.style.transform === "translateX(0)")) {
+      existingPane.style.transform = "translateX(100%)";
+      existingPane.style.pointerEvents = "none";
+      squeezePage(false);
+      InvoiceAIAgent.closeNativeSidePane();
+      return;
     }
 
     if (!existingPane) {
@@ -682,25 +852,9 @@ InvoiceAIAgent.openDockedSidePane = function (targetUrl) {
         display: "flex",
         flexDirection: "column",
         transition: "transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)",
-        transform: "translateX(100%)"
+        transform: "translateX(100%)",
+        pointerEvents: "none"
       });
-
-      var header = targetDoc.createElement("div");
-      Object.assign(header.style, {
-        height: "48px",
-        padding: "0 16px",
-        borderBottom: "1px solid #e2e8f0",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: "#f8fafc"
-      });
-      header.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:#1e293b;">
-          <span style="font-size:17px;">🧾</span> Invoice & Billing AI
-        </div>
-        <button id="d365-invoice-sidepane-close" style="border:none;background:transparent;cursor:pointer;font-size:18px;color:#64748b;padding:4px 8px;border-radius:4px;line-height:1;" title="Close">✕</button>
-      `;
 
       var iframe = targetDoc.createElement("iframe");
       iframe.id = "d365-invoice-sidepane-frame";
@@ -708,24 +862,20 @@ InvoiceAIAgent.openDockedSidePane = function (targetUrl) {
       Object.assign(iframe.style, {
         flex: "1",
         width: "100%",
+        height: "100%",
         border: "none",
         display: "block"
       });
 
-      existingPane.appendChild(header);
       existingPane.appendChild(iframe);
       targetDoc.body.appendChild(existingPane);
-
-      targetDoc.getElementById("d365-invoice-sidepane-close").onclick = function () {
-        existingPane.style.transform = "translateX(100%)";
-        squeezePage(false);
-      };
     }
 
     var frame = targetDoc.getElementById("d365-invoice-sidepane-frame");
     if (frame) frame.src = targetUrl;
 
     setTimeout(function () {
+      existingPane.style.pointerEvents = "auto";
       existingPane.style.transform = "translateX(0)";
       squeezePage(true);
     }, 20);

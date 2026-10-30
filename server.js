@@ -259,9 +259,14 @@ app.post('/api/invoice-agent/mark-paid', async (req, res) => {
 });
 
 app.listen(PORT, () => {
+  const cfBase = process.env.CLOUDFLARE_URL || 'https://moscow-configuration-basics-headline.trycloudflare.com';
+  const salesUrl = process.env.SALES_AGENT_URL || `${cfBase}/widget`;
+  const invoiceUrl = process.env.INVOICE_AGENT_URL || `${cfBase}/invoice`;
 
   console.log('========================================================');
   console.log(`🚀 Sales AI Agent Server running at: http://localhost:${PORT}`);
-  console.log(`🌐 Open http://localhost:${PORT} in your browser to test.`);
+  console.log(`🌐 Local Test: http://localhost:${PORT}`);
+  console.log(`💼 Sales Agent Cloudflare URL:   ${salesUrl}`);
+  console.log(`📑 Invoice Agent Cloudflare URL: ${invoiceUrl}`);
   console.log('========================================================');
 });

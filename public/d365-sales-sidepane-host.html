@@ -25,15 +25,23 @@
   </style>
 </head>
 <body>
-  <!-- Live Cloudflare URL for Sales AI Agent -->
+  <!--
+    Active Cloudflare Live URLs:
+    - Sales Agent:   https://moscow-configuration-basics-headline.trycloudflare.com/widget
+    - Invoice Agent: https://moscow-configuration-basics-headline.trycloudflare.com/invoice
+  -->
   <iframe 
     id="agentFrame"
-    src="https://lung-urge-portsmouth-officially.trycloudflare.com/widget" 
+    src="https://moscow-configuration-basics-headline.trycloudflare.com/widget" 
     allow="clipboard-read; clipboard-write; microphone"
     onload="console.log('Sales AI Agent widget loaded successfully')">
   </iframe>
 
   <script>
+    var CLOUDFLARE_BASE = "https://moscow-configuration-basics-headline.trycloudflare.com";
+    var SALES_AGENT_URL = CLOUDFLARE_BASE + "/widget";
+    var INVOICE_AGENT_URL = CLOUDFLARE_BASE + "/invoice";
+
     // Forward URL parameters (Lead ID, Name, data) to iframe
     try {
       var currentParams = window.location.search;
@@ -44,9 +52,9 @@
           var urlParams = new URLSearchParams(currentParams);
           var dataVal = urlParams.get('data');
           if (dataVal) {
-            frame.src = "https://lung-urge-portsmouth-officially.trycloudflare.com/widget?" + dataVal;
+            frame.src = SALES_AGENT_URL + "?" + dataVal;
           } else {
-            frame.src = "https://lung-urge-portsmouth-officially.trycloudflare.com/widget" + currentParams;
+            frame.src = SALES_AGENT_URL + currentParams;
           }
         }
       }

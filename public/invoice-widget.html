@@ -528,6 +528,30 @@
       cursor: pointer;
     }
 
+    .crm-record-link {
+      color: var(--primary, #4f46e5);
+      text-decoration: underline;
+      text-decoration-thickness: 1.5px;
+      cursor: pointer;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 5px;
+      margin: 1px 2px;
+      border-radius: 4px;
+      background: rgba(79, 70, 229, 0.08);
+      transition: all 0.15s ease;
+      vertical-align: baseline;
+    }
+
+    .crm-record-link:hover {
+      background: rgba(79, 70, 229, 0.2);
+      color: #3730a3;
+      text-decoration: none;
+      transform: translateY(-1px);
+    }
+
     /* Modals */
     .modal-overlay {
       display: none;
@@ -635,6 +659,8 @@
       <div class="widget-actions">
         <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle Light/Dark">☀️</button>
         <button class="icon-btn" onclick="clearChat()" title="Reset Chat">🔄</button>
+        <button class="icon-btn" onclick="closeWidget()" title="Close"
+          style="font-size: 15px; font-weight: bold; line-height: 1;">✕</button>
       </div>
     </div>
 
@@ -894,7 +920,44 @@
       if (e.key === 'Enter') sendMessage();
     }
 
-    function appendMessage(text, sender) {
+    const STORAGE_KEY_INVOICE_CHAT = 'd365_invoice_chat_v1';
+    let savedChatMessages = [];
+
+    function loadSavedChat() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_INVOICE_CHAT);
+        if (raw) {
+          savedChatMessages = JSON.parse(raw);
+          if (Array.isArray(savedChatMessages) && savedChatMessages.length > 0) {
+            chatArea.innerHTML = '';
+            savedChatMessages.forEach(m => {
+              if (m && m.text && m.sender) {
+                appendMessage(m.text, m.sender, false);
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Could not load chat history:', e);
+      }
+    }
+
+    function saveMessageToStorage(text, sender) {
+      try {
+        savedChatMessages.push({ text, sender });
+        if (savedChatMessages.length > 100) {
+          savedChatMessages = savedChatMessages.slice(-100);
+        }
+        localStorage.setItem(STORAGE_KEY_INVOICE_CHAT, JSON.stringify(savedChatMessages));
+      } catch (e) {
+        console.warn('Could not save chat history:', e);
+      }
+    }
+
+    function appendMessage(text, sender, shouldSave = true) {
+      if (shouldSave) {
+        saveMessageToStorage(text, sender);
+      }
       const msgDiv = document.createElement('div');
       msgDiv.className = `message ${sender}`;
 
@@ -932,7 +995,7 @@
                     <a href="/api/invoice-agent/download-pdf/${actionData.invoiceNumber}" target="_blank" class="chat-card-btn primary">
                       📥 View PDF
                     </a>
-                    <button onclick="openEmailModal('${actionData.email}', '${actionData.customerName}')" class="chat-card-btn secondary">
+                    <button onclick="openEmailModal('${actionData.email || actionData.customerEmail || ''}', '${actionData.customerName || ''}', '${actionData.invoiceNumber || ''}')" class="chat-card-btn secondary">
                       📧 Email Client
                     </button>
                   </div>
@@ -949,7 +1012,7 @@
                     <a href="${actionData.downloadUrl}" target="_blank" class="chat-card-btn primary">
                       📥 Download PDF
                     </a>
-                    <button onclick="openEmailModal()" class="chat-card-btn secondary">
+                    <button onclick="openEmailModal('${actionData.customerEmail || actionData.email || ''}', '${actionData.customerName || ''}', '${actionData.invoiceNumber || ''}')" class="chat-card-btn secondary">
                       📧 Email Client
                     </button>
                   </div>
@@ -981,6 +1044,18 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
+      // Parse custom d365 record links [Name](d365:entity:id)
+      escaped = escaped.replace(/\[([^\]]+)\]\((d365:([a-zA-Z0-9_]+):([a-zA-Z0-9{}_-]+))\)/gi, function (match, label, uri, entity, id) {
+        const cleanId = String(id).replace(/[{}]/g, '').trim();
+        const cleanLabel = String(label).replace(/\*\*/g, '').replace(/`/g, '');
+        return `<a href="javascript:void(0)" class="crm-record-link" onclick="openCrmRecord('${entity}', '${cleanId}')" title="Open ${cleanLabel} in Dynamics 365"><span>${cleanLabel}</span> <span style="font-size:10px;opacity:0.85">↗</span></a>`;
+      });
+
+      // Parse external http links
+      escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, function (match, label, url) {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="crm-record-link">${label} ↗</a>`;
+      });
+
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
       escaped = escaped.replace(/^\* (.*$)/gim, '• $1<br>');
@@ -996,6 +1071,48 @@
       });
 
       return escaped;
+    }
+
+    function openCrmRecord(entityName, entityId) {
+      if (!entityId) return;
+      const cleanId = String(entityId).replace(/[{}]/g, '').trim();
+      console.log('Navigating to Dynamics 365 record in-place:', entityName, cleanId);
+
+      // 1. Communicate to Dynamics 365 Shell via postMessage (Works across all iframes and side panes)
+      const payload = {
+        action: 'open_d365_record',
+        entityName: entityName || 'invoice',
+        entityId: cleanId
+      };
+
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(payload, '*');
+        }
+        if (window.top && window.top !== window && window.top !== window.parent) {
+          window.top.postMessage(payload, '*');
+        }
+      } catch (e) { }
+
+      // 2. Direct Xrm call if accessible (same-origin case)
+      try {
+        const xrm = (window.top && window.top.Xrm) || (window.parent && window.parent.Xrm) || window.Xrm;
+        if (xrm && xrm.Navigation && typeof xrm.Navigation.openForm === 'function') {
+          xrm.Navigation.openForm({
+            entityName: entityName || 'invoice',
+            entityId: cleanId,
+            openInNewWindow: false
+          });
+          return;
+        }
+      } catch (err) { }
+
+      // 3. Only if opened standalone outside of Dynamics 365, open CRM tab
+      if (window.self === window.top) {
+        const crmBase = 'https://orgfaf1cf48.crm8.dynamics.com';
+        const crmUrl = `${crmBase}/main.aspx?pagetype=entityrecord&etn=${entityName || 'invoice'}&id=${cleanId}`;
+        window.open(crmUrl, '_blank');
+      }
     }
 
     // Modal Functions
@@ -1025,8 +1142,11 @@
       }
     }
 
-    function openEmailModal(defaultEmail, defaultName) {
-      document.getElementById('emailRecipient').value = defaultEmail || activeEmail;
+    let currentModalInvoiceNumber = '';
+
+    function openEmailModal(defaultEmail, defaultName, defaultInvoice) {
+      currentModalInvoiceNumber = defaultInvoice || '';
+      document.getElementById('emailRecipient').value = defaultEmail || (defaultName ? '' : activeEmail);
       document.getElementById('emailRecipientName').value = defaultName || activeCustomer;
       document.getElementById('emailModal').style.display = 'flex';
     }
@@ -1036,7 +1156,11 @@
       const name = document.getElementById('emailRecipientName').value.trim() || activeCustomer;
       closeModal('emailModal');
 
-      sendQuickPrompt(`Send this tax invoice to ${name} at ${email}`);
+      if (currentModalInvoiceNumber) {
+        sendQuickPrompt(`Send tax invoice ${currentModalInvoiceNumber} to ${name} at ${email}`);
+      } else {
+        sendQuickPrompt(`Send this tax invoice to ${name} at ${email}`);
+      }
     }
 
     function closeModal(id) {
@@ -1044,6 +1168,11 @@
     }
 
     function clearChat() {
+      try {
+        localStorage.removeItem(STORAGE_KEY_INVOICE_CHAT);
+        savedChatMessages = [];
+      } catch (e) { }
+
       chatArea.innerHTML = `
         <div class="message ai">
           <div class="avatar ai">AI</div>
@@ -1064,6 +1193,48 @@
       document.getElementById('themeBtn').textContent = next === 'light' ? '☀️' : '🌙';
     }
 
+    function closeWidget() {
+      // 1. Post cross-origin close request to Dynamics 365 parent and top frames
+      try {
+        if (window.parent) window.parent.postMessage({ action: "close_d365_invoice_sidepane" }, "*");
+      } catch (e) { }
+      try {
+        if (window.top) window.top.postMessage({ action: "close_d365_invoice_sidepane" }, "*");
+      } catch (e) { }
+
+      // 2. Direct DOM manipulation if accessible
+      try {
+        var topDoc = (window.top && window.top.document) || (window.parent && window.parent.document) || document;
+        var sidePane = topDoc.getElementById("d365-invoice-ai-sidepane");
+        if (sidePane) {
+          sidePane.style.transform = "translateX(100%)";
+          sidePane.style.pointerEvents = "none";
+          if (typeof window.top.__d365SqueezePage === "function") {
+            window.top.__d365SqueezePage(false);
+          }
+        }
+        var drawer = topDoc.getElementById("d365-invoice-ai-drawer");
+        if (drawer) {
+          drawer.setAttribute("data-open", "false");
+          drawer.style.display = "none";
+          drawer.style.opacity = "0";
+        }
+        var fab = topDoc.getElementById("d365-invoice-ai-fab");
+        if (fab) {
+          fab.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2L12 2Z" fill="white"/>
+              <path d="M19 16L19.9 19.1L23 20L19.9 20.9L19 24L18.1 20.9L15 20L18.1 19.1L19 16Z" fill="#FDE047"/>
+            </svg>
+          `;
+          fab.title = "Invoice AI Agent";
+        }
+        if (window.top && window.top.__InvoiceAIAgent && typeof window.top.__InvoiceAIAgent.closeNativeSidePane === "function") {
+          window.top.__InvoiceAIAgent.closeNativeSidePane();
+        }
+      } catch (e) { }
+    }
+
     // Backdrop click
     ['convertModal', 'emailModal'].forEach(id => {
       document.getElementById(id).addEventListener('click', function (e) {
@@ -1071,7 +1242,10 @@
       });
     });
 
-    window.addEventListener('DOMContentLoaded', initDynamicsContext);
+    window.addEventListener('DOMContentLoaded', () => {
+      initDynamicsContext();
+      loadSavedChat();
+    });
 
   </script>
 </body>

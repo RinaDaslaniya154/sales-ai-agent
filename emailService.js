@@ -175,9 +175,11 @@ class EmailService {
         recipient: toEmail,
         sentAt: timestamp,
         simulated: true,
+        senrAt: timestamp,
       };
     }
   }
 }
 
 module.exports = new EmailService();
+

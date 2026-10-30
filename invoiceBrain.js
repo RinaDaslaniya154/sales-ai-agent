@@ -24,28 +24,43 @@ Directives:
    - When requested to check "outstanding balance", "pending payment", "unpaid bills", or "overdue", call 'check_outstanding_balance'. Note: Email reminder notifications are handled automatically by Power Automate Flow.
    - When requested to "audit", "check tax", or "check compliance", call 'audit_invoice_compliance'.
 3. You have full access across all Dynamics 365 Invoices and Customers. If the user mentions any customer or invoice (even if not currently displayed on screen), provide the requested information directly. NEVER refuse or tell the user to navigate away.
-4. Always respond professionally, concisely, and efficiently as an enterprise billing colleague.
-5. Output valid markdown with emoji badges and clean tables/bullet points.
+4. Always respond concisely, briefly, and directly (under 3 lines).
+5. NEVER generate large markdown tables or lengthy paragraphs. Use clean, compact bullet points with emoji badges.
+6. When mentioning an invoice or customer where an invoice ID is known, format it as a clickable link [Customer Name](d365:invoice:ID) so the user can click to open it directly in Dynamics 365.
 `;
 
 class InvoiceBrain {
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-    this.isGemini = Boolean(
-      this.apiKey &&
-      !this.apiKey.includes('YOUR_') &&
-      (this.apiKey.startsWith('AQ.') || this.apiKey.startsWith('AIza'))
-    );
+    this.geminiKey = process.env.GEMINI_API_KEY;
+    this.openaiKey = process.env.OPENAI_API_KEY;
+
     this.isOpenAI = Boolean(
-      this.apiKey &&
-      !this.apiKey.includes('YOUR_') &&
-      this.apiKey.startsWith('sk-')
+      this.openaiKey &&
+      !this.openaiKey.includes('YOUR_') &&
+      this.openaiKey.startsWith('sk-')
+    );
+    this.isGemini = Boolean(
+      this.geminiKey &&
+      !this.geminiKey.includes('YOUR_') &&
+      (this.geminiKey.startsWith('AQ.') || this.geminiKey.startsWith('AIza'))
     );
 
+    if (this.isOpenAI) {
+      this.openai = new OpenAI({ apiKey: this.openaiKey });
+      this.modelName = 'gpt-4o';
+      console.log('✅ OpenAI GPT-4o Connected for Invoice AI Copilot (Model: gpt-4o).');
+    }
     if (this.isGemini) {
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
-    } else if (this.isOpenAI) {
-      this.openai = new OpenAI({ apiKey: this.apiKey });
+      this.genAI = new GoogleGenerativeAI(this.geminiKey);
+      if (!this.isOpenAI) {
+        this.modelName = 'gemini-3.1-flash-lite';
+        console.log('✅ Google Gemini AI Connected for Invoice AI Copilot.');
+      } else {
+        console.log('✅ Google Gemini AI Connected as Backup Engine.');
+      }
+    }
+    if (!this.isOpenAI && !this.isGemini) {
+      console.log('ℹ️ Running Built-in Smart Invoice Copilot Rule Engine.');
     }
 
     this.sessions = new Map();
@@ -62,16 +77,64 @@ class InvoiceBrain {
     }
 
     const session = this.sessions.get(sessionId);
-    if (context.entityName) session.currentEntity = context.entityName;
-    if (context.recordId) session.currentRecordId = context.recordId;
-    if (context.recordName) session.currentRecordName = context.recordName;
-    if (context.customerName) session.customerName = context.customerName;
-    if (context.totalAmount) session.totalAmount = context.totalAmount;
+    if (context.entityName !== undefined) session.currentEntity = context.entityName || null;
+    if (context.recordId !== undefined) session.currentRecordId = context.recordId || null;
+    if (context.recordName !== undefined) session.currentRecordName = context.recordName || null;
+    if (context.customerName !== undefined) session.customerName = context.customerName || null;
+    if (context.totalAmount !== undefined) session.totalAmount = context.totalAmount || null;
 
     const msgTrimmed = (userMessage || '').trim();
     const textLower = msgTrimmed.toLowerCase();
 
-    // ── Fast Path Handlers for Instant Latency ──
+    // ── Fast-Paths: Instant 1-click button chips (skips AI roundtrip for zero latency) ──
+    // 1. Direct PDF Preview button
+    if (/^(preview pdf|download pdf|view pdf|pdf)$/i.test(msgTrimmed)) {
+      return await this.handlePreviewPdf(session, context, userMessage);
+    }
+
+    // 2. Direct overall invoice amount / payment summary across all invoices
+    if (/\b(total\s+(?:invoice\s+)?(?:amount|payment|billing|balance|revenue)|grand\s+total)\b/i.test(textLower) &&
+      !/\b(for|of|about)\s+[a-z]/i.test(textLower)) {
+      return await this.handleOutstandingSummary(session, context, textLower, userMessage);
+    }
+
+    // 3. Direct Mark as Paid chip
+    if (/^(mark as paid|mark paid|paid)$/i.test(msgTrimmed)) {
+      return await this.handleMarkPaid(session, context, userMessage);
+    }
+
+    // ── 🤖 AI-FIRST ARCHITECTURE: Send all conversational and natural language questions to OpenAI GPT-4o or Gemini AI ──
+    if (this.isOpenAI) {
+      try {
+        const openAiRes = await this.callOpenAI(session, userMessage, context);
+        if (openAiRes && openAiRes.reply) {
+          return openAiRes;
+        }
+      } catch (e) {
+        console.warn('OpenAI GPT-4o invoice AI call failed, falling back:', e.message);
+        if (this.genAI) {
+          try {
+            const geminiRes = await this.callGemini(session, userMessage, context);
+            if (geminiRes && geminiRes.reply) {
+              return geminiRes;
+            }
+          } catch (gErr) {
+            console.warn('Gemini fallback failed:', gErr.message);
+          }
+        }
+      }
+    } else if (this.isGemini) {
+      try {
+        const geminiRes = await this.callGemini(session, userMessage, context);
+        if (geminiRes && geminiRes.reply) {
+          return geminiRes;
+        }
+      } catch (e) {
+        console.warn('Gemini invoice AI call failed, falling back to smart rule engine:', e.message);
+      }
+    }
+
+    // ── Fallback Rule Engine (Runs if Gemini is unavailable, offline, or rate-limited) ──
 
     const isQuoteContext = (session.currentEntity === 'quote' || textLower.includes('quote'));
 
@@ -127,7 +190,15 @@ class InvoiceBrain {
       return await this.handleOverdueCheck(session, context, userMessage);
     }
 
-    // 10. List Invoices / Invoices List
+    // 10. List Quotations / Quotes List
+    if (
+      /\b(quotations?|quotes?)\b/i.test(textLower) &&
+      /\b(list|all|show|get|display|fetch|view|see|give|ketla|badha)\b/i.test(textLower)
+    ) {
+      return await this.handleListQuotes(session, context, userMessage);
+    }
+
+    // 11. List Invoices / Invoices List
     if (
       /\b(list|all|show|get|display|fetch|view|see)\b.*\b(invoices?|bills?)\b/i.test(textLower) ||
       /\b(invoices?|bills?)\b.*\b(list|all)\b/i.test(textLower) ||
@@ -151,17 +222,7 @@ class InvoiceBrain {
       return await this.handleCustomerInvoiceLookup(session, context, userMessage);
     }
 
-    // AI Fallback via Gemini or Smart Rules
-    if (this.isGemini) {
-      try {
-        return await this.callGemini(session, userMessage, context);
-      } catch (e) {
-        console.warn('Gemini invoice call failed, using rule engine:', e.message);
-        return this.ruleEngine(session, userMessage, context);
-      }
-    } else {
-      return this.ruleEngine(session, userMessage, context);
-    }
+    return this.ruleEngine(session, userMessage, context);
   }
 
   /**
@@ -254,9 +315,12 @@ class InvoiceBrain {
         dynamicsService.attachInvoicePdf(convRes.invoiceId, pdfBuffer, `${convRes.invoiceNumber}.pdf`).catch(e => console.error(e));
       }
 
+      const invLink = convRes.invoiceId ? `[Invoice #${convRes.invoiceNumber}](d365:invoice:${convRes.invoiceId})` : `Invoice #${convRes.invoiceNumber}`;
+      const custLink = convRes.invoiceId ? `[${convRes.customerName}](d365:invoice:${convRes.invoiceId})` : `**${convRes.customerName}**`;
+
       const reply = convRes.alreadyExists
-        ? `ℹ️ **Invoice #${convRes.invoiceNumber}** is already created for this quotation (${convRes.customerName}).`
-        : `✅ **Invoice #${convRes.invoiceNumber}** created for **${convRes.customerName}** (₹${Number(convRes.grandTotal).toLocaleString('en-IN')}).\n\n` +
+        ? `ℹ️ **${invLink}** is already created for this quotation (${custLink}).`
+        : `✅ **${invLink}** created for ${custLink} (₹${Number(convRes.grandTotal).toLocaleString('en-IN')}).\n\n` +
         `<!--INVOICE_ACTION:${JSON.stringify({
           action: 'converted',
           invoiceNumber: convRes.invoiceNumber,
@@ -428,6 +492,8 @@ class InvoiceBrain {
       `<!--INVOICE_ACTION:${JSON.stringify({
         action: 'preview',
         invoiceNumber,
+        customerName: invData.customerName || '',
+        customerEmail: invData.customerEmail || '',
         downloadUrl: `/api/invoice-agent/download-pdf/${invoiceNumber}`
       })}-->`;
 
@@ -454,7 +520,27 @@ class InvoiceBrain {
 
     if (!invData) {
       invoiceId = context.recordId || session.currentRecordId;
-      invData = await this.resolveInvoiceData(invoiceId, context);
+      if (invoiceId) {
+        invData = await this.resolveInvoiceData(invoiceId, context);
+      }
+    }
+
+    // If no customer target and no active record (e.g. user is on "All Invoices" grid view)
+    if (!invData) {
+      const summary = await dynamicsService.getAllInvoicesSummary();
+      const pending = summary.invoices || [];
+      if (pending.length === 0) {
+        return {
+          reply: `🎉 **All invoices are already paid!** There are no pending invoices to mark as paid.`
+        };
+      }
+      const list = pending.map(inv => {
+        const custLink = inv.invoiceid ? `[${inv.customer}](d365:invoice:${inv.invoiceid})` : `**${inv.customer}**`;
+        return `• ${custLink}: ₹${Number(inv.amount || 0).toLocaleString('en-IN')} (\`${inv.invoicenumber}\`)`;
+      }).join('\n');
+      return {
+        reply: `Which invoice would you like to mark as **Paid**? Please provide the Customer Name or Invoice Number:\n\n${list}`
+      };
     }
 
     const invoiceNumber = invData.invoicenumber || invData.invoiceNumber || 'INV-2026';
@@ -556,9 +642,17 @@ class InvoiceBrain {
    */
   async handleOutstandingSummary(session, context, query = '', userMessage = '') {
     const fullText = (userMessage || query || '').toLowerCase();
-    const isOverallQuery = /\b(overall|all|everyone|bdha|badha|every|jetla|total|badhu|aakhu|ketlu baki|total baki|summary)\b/i.test(fullText);
+    const isOverallQuery = /\b(overall|all|everyone|bdha|badha|every|jetla|total|badhu|aakhu|ketlu baki|total baki|summary|which|any|list|pending)\b/i.test(fullText);
 
-    const targetCustomer = !isOverallQuery ? this.extractTargetCustomerName(userMessage || query) : null;
+    // If Gemini passed a specific customerName in query, use it directly; otherwise extract
+    let targetCustomer = null;
+    if (!isOverallQuery) {
+      if (query && typeof query === 'string' && query.trim() && query !== fullText && !query.includes('pending') && !query.includes('due')) {
+        targetCustomer = query.trim();
+      } else {
+        targetCustomer = this.extractTargetCustomerName(userMessage || query);
+      }
+    }
     const activeCustomer = context.customerName || session.customerName || '';
 
     // If user specifically asked about a customer
@@ -569,10 +663,12 @@ class InvoiceBrain {
         const inv = matches[0];
         const isPaid = (inv.statecode === 2 || inv.statuscode === 100001);
         const amount = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+        const custLink = inv.invoiceid ? `[${inv.customer}](d365:invoice:${inv.invoiceid})` : `**${inv.customer}**`;
+        const invNumBadge = inv.invoiceid ? `[\`${inv.invoicenumber}\`](d365:invoice:${inv.invoiceid})` : `\`${inv.invoicenumber}\``;
         return {
           reply: `💰 **Payment Status for ${inv.customer}**\n\n` +
-            `* 👤 **Customer:** **${inv.customer}**\n` +
-            `* 📑 **Invoice No:** \`${inv.invoicenumber}\`\n` +
+            `* 👤 **Customer:** ${custLink}\n` +
+            `* 📑 **Invoice No:** ${invNumBadge}\n` +
             `* 💵 **Total Amount:** **${amount}**\n` +
             `* 📊 **Payment Status:** **${isPaid ? '✅ PAID / SETTLED' : '⏳ UNPAID / DUE'}**\n\n` +
             (isPaid ? `🎉 This invoice is fully settled in Dynamics 365.` : `⚠️ Payment is outstanding.\n\n*(Note: Form on your screen is currently showing **${activeCustomer}**).*`),
@@ -613,19 +709,55 @@ class InvoiceBrain {
     }
 
     const summary = await dynamicsService.getAllInvoicesSummary();
-    const formattedTotal = '₹' + Number(summary.totalOutstanding).toLocaleString('en-IN');
-
+    const formattedOutstanding = '₹' + Number(summary.totalOutstanding || 0).toLocaleString('en-IN');
+    const formattedPaid = '₹' + Number(summary.totalPaid || 0).toLocaleString('en-IN');
+    const totalAmountVal = (summary.totalPaid || 0) + (summary.totalOutstanding || 0);
+    const formattedTotalAmount = '₹' + Number(totalAmountVal).toLocaleString('en-IN');
     const pendingCount = summary.count || 0;
+    const paidCount = (summary.paidInvoices || []).length;
+    const totalCount = paidCount + pendingCount;
+
+    // Check query intent:
+    const isTotalAmountQuery = /\b(total\s+invoice\s+amount|total\s+amount|grand\s+total|total\s+payment|total\s+invoice\s+payment|total\s+billing|all\s+amount|total\s+revenue)\b/i.test(fullText);
+    const isPaidQuery = /\b(received|paid|collected|settled|jama|aavi gayel|mali gayel)\b/i.test(fullText) &&
+      !/\b(unpaid|pending|due|baki|outstanding|overdue)\b/i.test(fullText);
+
     let reply = '';
-    if (pendingCount === 0) {
-      reply = `🎉 **All invoices are fully settled!** No pending payments.`;
-    } else if (pendingCount === 1) {
-      const inv = summary.invoices[0];
-      const amtStr = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
-      reply = `💰 **Total Outstanding:** **${formattedTotal}** — **${inv.customer}:** ${amtStr} (\`${inv.invoicenumber}\`)`;
+    if (isTotalAmountQuery) {
+      reply = `💰 **Total Invoices Overview:**\n` +
+        `• 💵 **Grand Total:** **${formattedTotalAmount}** (${totalCount} Invoices)\n` +
+        `• ✅ **Received / Paid:** **${formattedPaid}** (${paidCount} Invoices)\n` +
+        `• ⏳ **Outstanding / Due:** **${formattedOutstanding}** (${pendingCount} Pending Invoices)`;
+    } else if (isPaidQuery) {
+      if (paidCount === 0) {
+        reply = `ℹ️ **No Paid Invoices Found.** Total received payment is **₹0**.`;
+      } else if (paidCount === 1) {
+        const inv = summary.paidInvoices[0];
+        const amtStr = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+        const custLink = inv.invoiceid ? `[${inv.customer}](d365:invoice:${inv.invoiceid})` : `**${inv.customer}**`;
+        reply = `✅ **Total Received Payment:** **${formattedPaid}** — ${custLink}: ${amtStr} (\`${inv.invoicenumber}\`)`;
+      } else {
+        const lines = summary.paidInvoices.map(inv => {
+          const custLink = inv.invoiceid ? `[${inv.customer}](d365:invoice:${inv.invoiceid})` : `**${inv.customer}**`;
+          return `• ${custLink}: ₹${Number(inv.amount || 0).toLocaleString('en-IN')} (\`${inv.invoicenumber}\`)`;
+        }).join('\n');
+        reply = `✅ **Total Received Payment:** **${formattedPaid}** (${paidCount} settled invoices):\n${lines}`;
+      }
     } else {
-      const lines = summary.invoices.map(inv => `• **${inv.customer}:** ₹${Number(inv.amount || 0).toLocaleString('en-IN')} (\`${inv.invoicenumber}\`)`).join('\n');
-      reply = `💰 **Total Outstanding:** **${formattedTotal}** (${pendingCount} pending invoices):\n${lines}`;
+      if (pendingCount === 0) {
+        reply = `🎉 **All invoices are fully settled!** No pending payments. Total received: **${formattedPaid}**.`;
+      } else if (pendingCount === 1) {
+        const inv = summary.invoices[0];
+        const amtStr = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
+        const custLink = inv.invoiceid ? `[${inv.customer}](d365:invoice:${inv.invoiceid})` : `**${inv.customer}**`;
+        reply = `💰 **Total Outstanding:** **${formattedOutstanding}** — ${custLink}: ${amtStr} (\`${inv.invoicenumber}\`)`;
+      } else {
+        const lines = summary.invoices.map(inv => {
+          const custLink = inv.invoiceid ? `[${inv.customer}](d365:invoice:${inv.invoiceid})` : `**${inv.customer}**`;
+          return `• ${custLink}: ₹${Number(inv.amount || 0).toLocaleString('en-IN')} (\`${inv.invoicenumber}\`)`;
+        }).join('\n');
+        reply = `💰 **Total Outstanding:** **${formattedOutstanding}** (${pendingCount} pending invoices):\n${lines}`;
+      }
     }
 
     return {
@@ -664,33 +796,65 @@ class InvoiceBrain {
       };
     }
 
-    const rows = displayList.map(inv => {
+    const lines = displayList.map(inv => {
       const invNum = inv.invoicenumber && inv.invoicenumber !== 'N/A' ? inv.invoicenumber : (inv.name || 'INV');
       const cust = inv.customer || 'Valued Customer';
       const amt = '₹' + Number(inv.amount || 0).toLocaleString('en-IN');
       const statusBadge = inv.isPaid ? '✅ Paid' : '⏳ Due';
-      let dueStr = '-';
+      let dueStr = '';
       if (inv.duedate) {
         try {
           const d = new Date(inv.duedate);
-          dueStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-        } catch (_) {}
+          dueStr = ` | Due: ${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+        } catch (_) { }
       }
-      return `| \`${invNum}\` | **${cust}** | ${amt} | ${statusBadge} | ${dueStr} |`;
+      const custLink = inv.invoiceid ? `[${cust}](d365:invoice:${inv.invoiceid})` : `**${cust}**`;
+      return `• ${custLink}: ${amt} (\`${invNum}\` | ${statusBadge}${dueStr})`;
     }).join('\n');
 
     const totalAmt = displayList.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
     const formattedTotal = '₹' + totalAmt.toLocaleString('en-IN');
 
-    const reply = `### 📑 Dynamics 365 ${title} (${displayList.length})\n\n` +
-      `| Invoice No | Customer | Amount | Status | Due Date |\n` +
-      `| :--- | :--- | :--- | :--- | :--- |\n` +
-      `${rows}\n\n` +
+    const reply = `📑 **Dynamics 365 ${title} (${displayList.length})**\n\n` +
+      `${lines}\n\n` +
       `📊 **Total:** **${formattedTotal}** across **${displayList.length}** invoice(s).`;
 
     return {
       reply,
       invoices: displayList
+    };
+  }
+
+  /**
+   * 📋 List All Quotations from Dynamics 365
+   */
+  async handleListQuotes(session, context, userMessage = '') {
+    const quotes = await dynamicsService.getAllQuotesSummary();
+    if (!quotes || quotes.length === 0) {
+      return {
+        reply: `📂 **No Quotations Found in Dynamics 365**\n\nThere are currently no active quotation records created in your Dynamics 365 Sales Hub.`
+      };
+    }
+
+    const lines = quotes.map(q => {
+      const qNum = q.quotenumber && q.quotenumber !== 'N/A' ? q.quotenumber : (q.name || 'QUO');
+      const cust = q.customer || 'Valued Client';
+      const amt = '₹' + Number(q.amount || 0).toLocaleString('en-IN');
+      const custLink = q.quoteid ? `[${cust}](d365:quote:${q.quoteid})` : `**${cust}**`;
+      return `• ${custLink}: ${amt} (\`${qNum}\`)`;
+    }).join('\n');
+
+    const totalAmt = quotes.reduce((sum, q) => sum + (Number(q.amount) || 0), 0);
+    const formattedTotal = '₹' + totalAmt.toLocaleString('en-IN');
+
+    const reply = `📑 **Dynamics 365 Quotations (${quotes.length})**\n\n` +
+      `${lines}\n\n` +
+      `📊 **Total:** **${formattedTotal}** across **${quotes.length}** quotation(s).\n\n` +
+      `💡 *Click any quotation to open it, or say "Convert to Invoice" to bill the client.*`;
+
+    return {
+      reply,
+      quotes
     };
   }
 
@@ -771,18 +935,13 @@ class InvoiceBrain {
       crossNotice = `\n\n*(Note: Your screen is currently on **${activeRecordName}**. Showing details for **${cust}** from Dynamics 365).*`;
     }
 
-    const reply = `### 📄 Invoice Overview: ${invName}\n\n` +
-      `I have retrieved the details for **${cust}** from Microsoft Dynamics 365:\n\n` +
-      `| Field | Details |\n` +
-      `| :--- | :--- |\n` +
-      `| **Invoice Name** | ${invName} |\n` +
-      `| **Invoice No** | \`${invNum}\` |\n` +
-      `| **Customer** | ${cust} |\n` +
-      `| **Total Amount** | **${amtStr}** |\n` +
-      `| **Payment Status** | ${statusBadge} |\n` +
-      `| **Due Date** | ${dueStr} |` +
-      itemsSummary +
-      crossNotice;
+    const dueText = dueStr && dueStr !== '-' ? ` (Due: ${dueStr})` : '';
+    const custLink = inv.invoiceid ? `[${cust}](d365:invoice:${inv.invoiceid})` : `**${cust}**`;
+    const invNumBadge = inv.invoiceid ? `[\`${invNum}\`](d365:invoice:${inv.invoiceid})` : `\`${invNum}\``;
+
+    const reply = `📄 ${invNumBadge} — ${custLink}\n` +
+      `• 💵 **Amount:** **${amtStr}**\n` +
+      `• 📊 **Status:** ${statusBadge}${dueText}`;
 
     return {
       reply,
@@ -1139,7 +1298,7 @@ class InvoiceBrain {
       try {
         const found = await dynamicsService.findQuoteByQuery(target);
         if (found) return found;
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const cleanAmount = context.totalAmount ? (Number(String(context.totalAmount).replace(/[^0-9.]/g, '')) || 0) : 0;
@@ -1235,6 +1394,14 @@ class InvoiceBrain {
             }
           },
           {
+            name: 'list_all_quotes',
+            description: 'List all quotations / quotes from Microsoft Dynamics 365 CRM. Use this when user asks for "list of quotation", "all quotes", "quotation list", or "bdha quotations".',
+            parameters: {
+              type: 'OBJECT',
+              properties: {}
+            }
+          },
+          {
             name: 'convert_quote_to_invoice',
             description: 'Convert a Quote in Microsoft Dynamics 365 into an official Tax Invoice. Accepts optional customerName or quote query, and optional discount percentage.',
             parameters: {
@@ -1309,7 +1476,7 @@ class InvoiceBrain {
           },
           {
             name: 'check_outstanding_balance',
-            description: 'Check outstanding balance, pending payments, overdue bills, or payment summary in Dynamics 365.',
+            description: 'Check payment amounts in Dynamics 365: total received/paid payment amount, outstanding balance, pending payments, overdue bills, or payment summary.',
             parameters: {
               type: 'OBJECT',
               properties: {
@@ -1375,6 +1542,10 @@ class InvoiceBrain {
         return await this.handleListInvoices(session, context, filter);
       }
 
+      if (call.name === 'list_all_quotes') {
+        return await this.handleListQuotes(session, context, userMessage);
+      }
+
       if (call.name === 'convert_quote_to_invoice') {
         return await this.handleConvertQuote(session, context, args.quoteQuery || userMessage);
       }
@@ -1401,6 +1572,243 @@ class InvoiceBrain {
     }
 
     const reply = result.response.text();
+    return { reply };
+  }
+
+  getOpenAITools() {
+    return [
+      {
+        type: 'function',
+        function: {
+          name: 'get_invoice_details',
+          description: 'Fetch and view the details of an invoice from Microsoft Dynamics 365 CRM by customer name, invoice name, or invoice number.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Customer full name, invoice name, or invoice number (e.g. "Avani Shah", "INV-01043", "Ankit")'
+              }
+            },
+            required: ['query']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_all_invoices',
+          description: 'List all invoices from Microsoft Dynamics 365 CRM. Can optionally filter by "all", "paid", or "pending".',
+          parameters: {
+            type: 'object',
+            properties: {
+              statusFilter: {
+                type: 'string',
+                description: 'Filter invoices: "all", "paid", or "pending" (default "all")'
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_all_quotes',
+          description: 'List all quotations / quotes from Microsoft Dynamics 365 CRM.',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'convert_quote_to_invoice',
+          description: 'Convert a Quote in Microsoft Dynamics 365 into an official Tax Invoice.',
+          parameters: {
+            type: 'object',
+            properties: {
+              quoteQuery: {
+                type: 'string',
+                description: 'Customer name or Quote number to convert (e.g. "Rina Patel", "QUO-01002")'
+              },
+              discountPercent: {
+                type: 'number',
+                description: 'Discount percentage to apply (default 0)'
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'generate_and_email_invoice',
+          description: 'Generate the official PDF tax invoice and email it to the client via SMTP from Dynamics 365.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customerName: {
+                type: 'string',
+                description: 'Customer or recipient name'
+              },
+              recipientEmail: {
+                type: 'string',
+                description: 'Recipient email address if specified by user'
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'generate_invoice_pdf',
+          description: 'Generate, preview, or provide download link for the official branded PDF Tax Invoice.',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: {
+                type: 'string',
+                description: 'Customer name or invoice number (optional)'
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'mark_invoice_as_paid',
+          description: 'Mark an invoice as Paid/Settled in Microsoft Dynamics 365 Dataverse.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customerName: {
+                type: 'string',
+                description: 'Customer name or invoice number to mark as paid'
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'audit_invoice_compliance',
+          description: 'Audit an invoice for GST/tax compliance, mandatory legal fields, and calculation accuracy.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customerName: {
+                type: 'string',
+                description: 'Customer name or invoice number to audit'
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'check_outstanding_balance',
+          description: 'Check payment amounts in Dynamics 365: total received/paid payment amount, outstanding balance, pending payments, overdue bills, or payment summary.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customerName: {
+                type: 'string',
+                description: 'Specific customer name to check, or leave empty for total balance across all clients'
+              }
+            }
+          }
+        }
+      }
+    ];
+  }
+
+  async callOpenAI(session, userMessage, context) {
+    let systemInstruction = INVOICE_COPILOT_PLAYBOOK;
+    const activeRec = context.recordName || session.currentRecordName;
+    if (activeRec) {
+      systemInstruction += `\n\n[Active CRM Context]: Entity: "${session.currentEntity || 'invoice'}", Record: "${activeRec}", Customer: "${context.customerName || session.customerName || 'Client'}", Amount: ₹${context.totalAmount || session.totalAmount || '70,000'}`;
+    }
+
+    const messages = [
+      { role: 'system', content: systemInstruction },
+      ...(session.messages || []).slice(-6),
+      { role: 'user', content: userMessage }
+    ];
+
+    const response = await this.openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages,
+      tools: this.getOpenAITools(),
+      tool_choice: 'auto',
+    });
+
+    const choice = response.choices && response.choices[0];
+    if (!choice || !choice.message) {
+      throw new Error('Empty response from OpenAI GPT-4o');
+    }
+
+    const message = choice.message;
+
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      const toolCall = message.tool_calls[0];
+      const fnName = toolCall.function.name;
+      let args = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || '{}');
+      } catch (e) {
+        args = {};
+      }
+      console.log(`🤖 OpenAI GPT-4o Function Call triggered in Invoice Agent: ${fnName}`, args);
+
+      if (fnName === 'get_invoice_details') {
+        const q = args.query || userMessage;
+        return await this.handleCustomerInvoiceLookup(session, context, q);
+      }
+
+      if (fnName === 'list_all_invoices') {
+        const filter = args.statusFilter || 'all';
+        return await this.handleListInvoices(session, context, filter);
+      }
+
+      if (fnName === 'list_all_quotes') {
+        return await this.handleListQuotes(session, context, userMessage);
+      }
+
+      if (fnName === 'convert_quote_to_invoice') {
+        return await this.handleConvertQuote(session, context, args.quoteQuery || userMessage);
+      }
+
+      if (fnName === 'generate_and_email_invoice') {
+        return await this.handleEmailInvoice(session, context, userMessage);
+      }
+
+      if (fnName === 'generate_invoice_pdf') {
+        return await this.handlePreviewPdf(session, context, userMessage);
+      }
+
+      if (fnName === 'mark_invoice_as_paid') {
+        return await this.handleMarkPaid(session, context, args.customerName || userMessage);
+      }
+
+      if (fnName === 'audit_invoice_compliance') {
+        return await this.handleAuditCompliance(session, context, args.customerName || userMessage);
+      }
+
+      if (fnName === 'check_outstanding_balance') {
+        return await this.handleOutstandingSummary(session, context, args.customerName || '', userMessage);
+      }
+    }
+
+    const reply = message.content || '';
+    if (!session.messages) session.messages = [];
+    session.messages.push({ role: 'user', content: userMessage });
+    session.messages.push({ role: 'assistant', content: reply });
     return { reply };
   }
 

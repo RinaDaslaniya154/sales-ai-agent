@@ -1165,6 +1165,42 @@ class DynamicsService {
   }
 
   /**
+   * 📋 List all quotations from Dynamics 365 Dataverse
+   */
+  async getAllQuotesSummary() {
+    if (!this.isConfigured) return [];
+    try {
+      const token = await this.getAccessToken();
+      const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+      const res = await axios.get(
+        `${this.crmUrl}/api/data/v9.2/quotes?$select=quoteid,name,quotenumber,totalamount,statecode,statuscode,createdon&$expand=customerid_contact($select=fullname),customerid_account($select=name)&$orderby=createdon desc&$top=50`,
+        { headers }
+      );
+      const quotes = res.data?.value || [];
+      return quotes.map(q => {
+        const custObj = q.customerid_contact || q.customerid_account || {};
+        let customerName = custObj.fullname || custObj.name || q.name || 'Valued Client';
+        if (q.name && q.name.includes('-')) {
+          const parts = q.name.split('-');
+          if (parts[1]) customerName = parts[1].trim();
+        }
+        return {
+          quoteid: q.quoteid,
+          name: q.name,
+          quotenumber: q.quotenumber || 'N/A',
+          customer: customerName,
+          amount: Number(q.totalamount) || 0,
+          statecode: q.statecode,
+          statuscode: q.statuscode
+        };
+      });
+    } catch (e) {
+      console.warn('getAllQuotesSummary error:', e.message);
+      return [];
+    }
+  }
+
+  /**
    * 📄 Fetch Invoice details and line items by ID
    */
   async getInvoiceById(invoiceId) {

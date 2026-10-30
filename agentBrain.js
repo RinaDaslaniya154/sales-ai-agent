@@ -32,29 +32,37 @@ Internal Assistant Directives:
 
 class AgentBrain {
   constructor() {
-    this.apiKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-    this.isGemini = Boolean(
-      this.apiKey &&
-      !this.apiKey.includes('YOUR_') &&
-      (this.apiKey.startsWith('AQ.') || this.apiKey.startsWith('AIza'))
-    );
+    this.geminiKey = process.env.GEMINI_API_KEY;
+    this.openaiKey = process.env.OPENAI_API_KEY;
+
     this.isOpenAI = Boolean(
-      this.apiKey &&
-      !this.apiKey.includes('YOUR_') &&
-      this.apiKey.startsWith('sk-')
+      this.openaiKey &&
+      !this.openaiKey.includes('YOUR_') &&
+      this.openaiKey.startsWith('sk-')
+    );
+    this.isGemini = Boolean(
+      this.geminiKey &&
+      !this.geminiKey.includes('YOUR_') &&
+      (this.geminiKey.startsWith('AQ.') || this.geminiKey.startsWith('AIza'))
     );
 
-    this.isOpenAIConfigured = this.isGemini || this.isOpenAI;
+    this.isOpenAIConfigured = this.isOpenAI || this.isGemini;
 
+    if (this.isOpenAI) {
+      this.openai = new OpenAI({ apiKey: this.openaiKey });
+      this.modelName = process.env.OPENAI_MODEL || 'gpt-4o';
+      console.log(`✅ OpenAI Connected for Sales Team Copilot (Model: ${this.modelName}).`);
+    }
     if (this.isGemini) {
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.modelName = 'gemini-3.1-flash-lite';
-      console.log('✅ Google Gemini AI Connected (Model: gemini-3.1-flash-lite).');
-    } else if (this.isOpenAI) {
-      this.openai = new OpenAI({ apiKey: this.apiKey });
-      this.modelName = 'gpt-4o-mini';
-      console.log('✅ OpenAI GPT-4o Engine Connected for Sales Team Copilot (Model: gpt-4o-mini).');
-    } else {
+      this.genAI = new GoogleGenerativeAI(this.geminiKey);
+      if (!this.isOpenAI) {
+        this.modelName = 'gemini-3.1-flash-lite';
+        console.log('✅ Google Gemini AI Connected (Model: gemini-3.1-flash-lite).');
+      } else {
+        console.log('✅ Google Gemini AI Connected as Backup Engine.');
+      }
+    }
+    if (!this.isOpenAI && !this.isGemini) {
       console.log('ℹ️ Running Built-in Smart Sales Team Rule Engine.');
     }
 
@@ -349,18 +357,25 @@ class AgentBrain {
 
 
 
-    if (this.isGemini) {
+    if (this.isOpenAI) {
+      try {
+        return await this.callOpenAI(session, userMessage, context);
+      } catch (err) {
+        console.error('OpenAI API call failed, falling back to backup engine:', err.message);
+        if (this.genAI) {
+          try {
+            return await this.callGemini(session, userMessage, context);
+          } catch (gErr) {
+            console.error('Gemini fallback failed:', gErr.message);
+          }
+        }
+        return this.smartRuleEngine(session, userMessage, context);
+      }
+    } else if (this.isGemini) {
       try {
         return await this.callGemini(session, userMessage, context);
       } catch (err) {
         console.error('Gemini AI API call failed, falling back to smart engine:', err.message);
-        return this.smartRuleEngine(session, userMessage, context);
-      }
-    } else if (this.isOpenAI) {
-      try {
-        return await this.callOpenAI(session, userMessage, context);
-      } catch (err) {
-        console.error('OpenAI API call failed, falling back to smart engine:', err.message);
         return this.smartRuleEngine(session, userMessage, context);
       }
     } else {
@@ -633,7 +648,7 @@ class AgentBrain {
     }
 
     let response = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: this.modelName || 'gpt-4o',
       messages: session.messages,
       tools: this.getTools(),
       tool_choice: 'auto',
@@ -830,7 +845,7 @@ class AgentBrain {
       }
 
       const secondResponse = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: this.modelName || 'gpt-4o',
         messages: session.messages,
       });
 
