@@ -538,6 +538,7 @@
       <div class="widget-actions">
         <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle Light/Dark">☀️</button>
         <button class="icon-btn" onclick="clearChat()" title="Reset Chat">🔄</button>
+        <button class="icon-btn" onclick="closeAgentPane()" title="Close Assistant" style="font-size:12px;font-weight:700;">✕</button>
       </div>
     </div>
 
@@ -845,6 +846,19 @@
         }
       }
     });
+
+    function closeAgentPane() {
+      try {
+        if (window.parent) {
+          window.parent.postMessage({ action: "close_d365_sales_sidepane" }, "*");
+          window.parent.postMessage({ action: "close_d365_invoice_sidepane" }, "*");
+        }
+        if (window.top) {
+          window.top.postMessage({ action: "close_d365_sales_sidepane" }, "*");
+          window.top.postMessage({ action: "close_d365_invoice_sidepane" }, "*");
+        }
+      } catch (e) { }
+    }
 
     function toggleTheme() {
       const html = document.documentElement;

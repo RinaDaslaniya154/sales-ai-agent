@@ -17,9 +17,9 @@ if (typeof window !== "undefined") {
 }
 
 // Active Cloudflare Tunnel Live URLs
-InvoiceAIAgent.BASE_TUNNEL_URL = "https://moscow-configuration-basics-headline.trycloudflare.com";
-InvoiceAIAgent.SALES_AGENT_URL = "https://moscow-configuration-basics-headline.trycloudflare.com/widget";
-InvoiceAIAgent.INVOICE_AGENT_URL = "https://moscow-configuration-basics-headline.trycloudflare.com/invoice";
+InvoiceAIAgent.BASE_TUNNEL_URL = "https://word-transformation-pipeline-having.trycloudflare.com";
+InvoiceAIAgent.SALES_AGENT_URL = "https://word-transformation-pipeline-having.trycloudflare.com/widget";
+InvoiceAIAgent.INVOICE_AGENT_URL = "https://word-transformation-pipeline-having.trycloudflare.com/invoice";
 InvoiceAIAgent.WIDGET_URL = InvoiceAIAgent.INVOICE_AGENT_URL;
 
 InvoiceAIAgent.currentFormContext = null;
@@ -59,8 +59,9 @@ InvoiceAIAgent.onLoad = function (executionContext, selectedControl) {
 
     if (isFormLoadEvent) {
       InvoiceAIAgent.currentFormContext = executionContext.getFormContext();
-      // On form load, initialize floating button & watcher
+      // On form load, initialize top bar button, floating button & watcher
       if (InvoiceAIAgent.isInvoiceActive()) {
+        InvoiceAIAgent.injectTopBarButton();
         InvoiceAIAgent.initUI();
         InvoiceAIAgent.startNavigationWatcher();
       }
@@ -201,6 +202,10 @@ InvoiceAIAgent.cleanup = function () {
     var drawer = targetDoc.getElementById("d365-invoice-ai-drawer");
     if (drawer && drawer.parentNode) {
       drawer.parentNode.removeChild(drawer);
+    }
+    var topBtn = targetDoc.getElementById("d365-topbar-invoice-ai-btn");
+    if (topBtn && topBtn.parentNode) {
+      topBtn.parentNode.removeChild(topBtn);
     }
     if (topWin.__d365InvoiceWatcher) {
       topWin.clearInterval(topWin.__d365InvoiceWatcher);
@@ -768,6 +773,145 @@ InvoiceAIAgent.initUI = function () {
 };
 
 /**
+ * 🎯 INJECT TOP-BAR BUTTON NEXT TO MICROSOFT COPILOT (for Invoice & Quote views)
+ */
+InvoiceAIAgent.injectTopBarButton = function () {
+  try {
+    var topWin = window.top || window;
+    var targetDoc = topWin.document || document;
+
+    var existingBtn = targetDoc.getElementById("d365-topbar-invoice-ai-btn");
+    if (existingBtn) {
+      existingBtn.style.display = "inline-flex";
+      existingBtn.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        var agent = topWin.__InvoiceAIAgent || InvoiceAIAgent;
+        agent.openSidePane();
+      };
+      return;
+    }
+
+    var headerBar = targetDoc.getElementById("headerBar") ||
+      targetDoc.querySelector('[data-id="topBar"]') ||
+      targetDoc.querySelector('header[role="banner"]') ||
+      targetDoc.querySelector('.ms-Nav') ||
+      targetDoc.querySelector('div[aria-label="App header"]') ||
+      targetDoc.querySelector('#main-header');
+
+    var copilotBtn = null;
+    var candidates = (headerBar || targetDoc).querySelectorAll('button, div[role="button"]');
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var aria = (el.getAttribute("aria-label") || "").toLowerCase();
+      var dataId = (el.getAttribute("data-id") || "").toLowerCase();
+      var title = (el.getAttribute("title") || "").toLowerCase();
+      var txt = (el.innerText || el.textContent || "").toLowerCase();
+
+      if (aria.indexOf("copilot") !== -1 || 
+          dataId.indexOf("copilot") !== -1 || 
+          title.indexOf("copilot") !== -1 || 
+          txt.indexOf("copilot") !== -1) {
+        copilotBtn = el;
+        break;
+      }
+    }
+
+    var parentContainer = null;
+    var referenceNode = null;
+
+    if (copilotBtn && copilotBtn.parentNode) {
+      parentContainer = copilotBtn.parentNode;
+      referenceNode = copilotBtn;
+    } else if (headerBar) {
+      var rightContainers = headerBar.querySelectorAll('div, ul');
+      for (var j = rightContainers.length - 1; j >= 0; j--) {
+        if (rightContainers[j].querySelector('button')) {
+          parentContainer = rightContainers[j];
+          referenceNode = parentContainer.firstChild;
+          break;
+        }
+      }
+      if (!parentContainer) {
+        parentContainer = headerBar;
+        referenceNode = headerBar.lastChild;
+      }
+    }
+
+    if (!parentContainer) return;
+
+    var aiBtn = targetDoc.createElement("button");
+    aiBtn.id = "d365-topbar-invoice-ai-btn";
+    aiBtn.type = "button";
+    aiBtn.setAttribute("aria-label", "Invoice AI Agent");
+    aiBtn.title = "Open Invoice AI Agent (Copilot Assistant)";
+
+    aiBtn.innerHTML = `
+      <span style="display:inline-flex;align-items:center;justify-content:center;margin-right:6px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L14.2 8.3L20.5 10.5L14.2 12.7L12 19L9.8 12.7L3.5 10.5L9.8 8.3L12 2Z" fill="#34D399"/>
+          <path d="M19 16L20 18.8L22.8 19.8L20 20.8L19 23.5L18 20.8L15.2 19.8L18 18.8L19 16Z" fill="#FFFFFF"/>
+          <circle cx="5" cy="18" r="2.2" fill="#FDE047"/>
+        </svg>
+      </span>
+      <span style="font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.2px;color:#ffffff;line-height:1;">
+        Invoice AI
+      </span>
+    `;
+
+    Object.assign(aiBtn.style, {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "32px",
+      padding: "0 12px",
+      marginRight: "8px",
+      borderRadius: "16px",
+      background: "linear-gradient(135deg, rgba(16, 185, 129, 0.40) 0%, rgba(5, 150, 105, 0.40) 100%)",
+      border: "1px solid rgba(255, 255, 255, 0.35)",
+      boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+      color: "#ffffff",
+      cursor: "pointer",
+      outline: "none",
+      transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+      zIndex: "9999",
+      verticalAlign: "middle",
+      userSelect: "none"
+    });
+
+    aiBtn.onmouseenter = function () {
+      aiBtn.style.background = "linear-gradient(135deg, rgba(16, 185, 129, 0.70) 0%, rgba(5, 150, 105, 0.70) 100%)";
+      aiBtn.style.borderColor = "#ffffff";
+      aiBtn.style.transform = "translateY(-1px)";
+      aiBtn.style.boxShadow = "0 4px 14px rgba(16, 185, 129, 0.45)";
+    };
+    aiBtn.onmouseleave = function () {
+      aiBtn.style.background = "linear-gradient(135deg, rgba(16, 185, 129, 0.40) 0%, rgba(5, 150, 105, 0.40) 100%)";
+      aiBtn.style.borderColor = "rgba(255, 255, 255, 0.35)";
+      aiBtn.style.transform = "translateY(0px)";
+      aiBtn.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.15)";
+    };
+    aiBtn.onmousedown = function () { aiBtn.style.transform = "scale(0.96)"; };
+    aiBtn.onmouseup = function () { aiBtn.style.transform = "translateY(-1px)"; };
+
+    aiBtn.onclick = function (e) {
+      if (e && e.stopPropagation) e.stopPropagation();
+      var agent = topWin.__InvoiceAIAgent || InvoiceAIAgent;
+      agent.openSidePane();
+    };
+
+    if (referenceNode) {
+      parentContainer.insertBefore(aiBtn, referenceNode);
+    } else {
+      parentContainer.appendChild(aiBtn);
+    }
+
+    console.log("Invoice AI Agent Top-Bar button successfully injected next to Copilot!");
+  } catch (err) {
+    console.warn("Failed to inject Invoice Top Bar button:", err);
+  }
+};
+
+/**
  * 🚀 Open Copilot-Style Full-Height Right Side Pane (for Top Ribbon Command Button)
  */
 InvoiceAIAgent.openSidePane = function (primaryControl, selectedControl) {
@@ -905,6 +1049,7 @@ if (typeof window !== "undefined") {
 if (typeof window !== "undefined") {
   InvoiceAIAgent.closeNativeSidePane();
   if (InvoiceAIAgent.isInvoiceFormActive()) {
+    InvoiceAIAgent.injectTopBarButton();
     InvoiceAIAgent.initUI();
     InvoiceAIAgent.startNavigationWatcher();
   } else {
