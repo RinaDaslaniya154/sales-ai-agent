@@ -17,9 +17,9 @@ if (typeof window !== "undefined") {
 }
 
 // Active Cloudflare Tunnel Live URLs
-SalesAIAgent.BASE_TUNNEL_URL = "https://word-transformation-pipeline-having.trycloudflare.com";
-SalesAIAgent.SALES_AGENT_URL = "https://word-transformation-pipeline-having.trycloudflare.com/widget";
-SalesAIAgent.INVOICE_AGENT_URL = "https://word-transformation-pipeline-having.trycloudflare.com/invoice";
+SalesAIAgent.BASE_TUNNEL_URL = "https://proven-grows-communist-households.trycloudflare.com";
+SalesAIAgent.SALES_AGENT_URL = "https://proven-grows-communist-households.trycloudflare.com/widget";
+SalesAIAgent.INVOICE_AGENT_URL = "https://proven-grows-communist-households.trycloudflare.com/invoice";
 SalesAIAgent.WIDGET_URL = SalesAIAgent.SALES_AGENT_URL;
 
 SalesAIAgent.currentFormContext = null;
