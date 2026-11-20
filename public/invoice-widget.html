@@ -1194,6 +1194,13 @@
     }
 
     function closeWidget() {
+      // 0. Hide locally on screen immediately
+      try {
+        const container = document.querySelector('.widget-container') || document.querySelector('.app-container');
+        if (container) container.style.display = 'none';
+        if (window.frameElement) window.frameElement.style.display = 'none';
+      } catch (e) { }
+
       // 1. Post cross-origin close request to Dynamics 365 parent and top frames
       try {
         if (window.parent) window.parent.postMessage({ action: "close_d365_invoice_sidepane" }, "*");

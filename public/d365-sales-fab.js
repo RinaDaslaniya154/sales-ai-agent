@@ -16,10 +16,10 @@ if (typeof window !== "undefined") {
   window.SalesAIAgent = SalesAIAgent;
 }
 
-// Active Cloudflare Tunnel Live URLs
-SalesAIAgent.BASE_TUNNEL_URL = "https://proven-grows-communist-households.trycloudflare.com";
-SalesAIAgent.SALES_AGENT_URL = "https://proven-grows-communist-households.trycloudflare.com/widget";
-SalesAIAgent.INVOICE_AGENT_URL = "https://proven-grows-communist-households.trycloudflare.com/invoice";
+// Active Permanent Render Live URLs
+SalesAIAgent.BASE_TUNNEL_URL = "https://sales-ai-agent-sfn2.onrender.com";
+SalesAIAgent.SALES_AGENT_URL = "https://sales-ai-agent-sfn2.onrender.com/widget";
+SalesAIAgent.INVOICE_AGENT_URL = "https://sales-ai-agent-sfn2.onrender.com/invoice";
 SalesAIAgent.WIDGET_URL = SalesAIAgent.SALES_AGENT_URL;
 
 SalesAIAgent.currentFormContext = null;
@@ -31,10 +31,10 @@ if (topWin && !topWin.__d365SalesMsgListenerAttached) {
   // Listen for close commands from iframe widget
   topWin.addEventListener("message", function (event) {
     if (!event || !event.data) return;
-    if (event.data.action === "close_d365_sales_sidepane" || 
-        event.data === "close_d365_sales_sidepane" ||
-        event.data.action === "close_d365_sidepane" ||
-        event.data === "close_d365_sidepane") {
+    if (event.data.action === "close_d365_sales_sidepane" ||
+      event.data === "close_d365_sales_sidepane" ||
+      event.data.action === "close_d365_sidepane" ||
+      event.data === "close_d365_sidepane") {
       var agent = topWin.__SalesAIAgent || SalesAIAgent;
       if (agent && agent.closeSidePane) agent.closeSidePane();
     }
@@ -345,16 +345,10 @@ SalesAIAgent.injectTopBarButton = function () {
   try {
     var targetDoc = topWin.document || document;
 
-    // Avoid duplicate buttons
+    // Avoid duplicate buttons - remove old element to re-apply latest styles
     var existingBtn = targetDoc.getElementById("d365-topbar-sales-ai-btn");
     if (existingBtn) {
-      existingBtn.style.display = "inline-flex";
-      existingBtn.onclick = function (e) {
-        if (e && e.stopPropagation) e.stopPropagation();
-        var agent = topWin.__SalesAIAgent || SalesAIAgent;
-        agent.toggleSidePane();
-      };
-      return;
+      existingBtn.remove();
     }
 
     // 1. Locate Dynamics 365 Header Bar or Banner
@@ -375,10 +369,10 @@ SalesAIAgent.injectTopBarButton = function () {
       var title = (el.getAttribute("title") || "").toLowerCase();
       var txt = (el.innerText || el.textContent || "").toLowerCase();
 
-      if (aria.indexOf("copilot") !== -1 || 
-          dataId.indexOf("copilot") !== -1 || 
-          title.indexOf("copilot") !== -1 || 
-          txt.indexOf("copilot") !== -1) {
+      if (aria.indexOf("copilot") !== -1 ||
+        dataId.indexOf("copilot") !== -1 ||
+        title.indexOf("copilot") !== -1 ||
+        txt.indexOf("copilot") !== -1) {
         copilotBtn = el;
         break;
       }
@@ -424,49 +418,60 @@ SalesAIAgent.injectTopBarButton = function () {
           <circle cx="5" cy="18" r="2.2" fill="#38BDF8"/>
         </svg>
       </span>
-      <span style="font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.2px;color:#ffffff;line-height:1;">
+      <span style="font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;letter-spacing:0.2px;color:#ffffff;line-height:1;">
         Sales AI
       </span>
     `;
 
-    // Exact matching styles with Dynamics 365 top navigation bar
+    // Exact matching styles with Dynamics 365 Copilot button (Iconic Multi-Color Gradient Border)
+    var copilotBorderRadius = "4px";
+    if (copilotBtn) {
+      try {
+        var comp = targetDoc.defaultView.getComputedStyle(copilotBtn);
+        if (comp.borderRadius && comp.borderRadius !== "0px") {
+          copilotBorderRadius = comp.borderRadius;
+        }
+      } catch (e) { }
+    }
+
+    var normalBg = "linear-gradient(#002050, #002050) padding-box, linear-gradient(135deg, #38bdf8 0%, #818cf8 30%, #c084fc 60%, #f472b6 85%, #fb923c 100%) border-box";
+    var hoverBg = "linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.16)) padding-box, linear-gradient(135deg, #60a5fa 0%, #a78bfa 30%, #e879f9 60%, #f472b6 85%, #fb923c 100%) border-box";
+
     Object.assign(aiBtn.style, {
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
       height: "32px",
-      padding: "0 12px",
-      marginRight: "8px",
-      borderRadius: "16px",
-      background: "linear-gradient(135deg, rgba(99, 102, 241, 0.40) 0%, rgba(168, 85, 247, 0.40) 100%)",
-      border: "1px solid rgba(255, 255, 255, 0.35)",
-      boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+      padding: "0 10px",
+      marginRight: "6px",
+      alignSelf: "center",
+      borderRadius: copilotBorderRadius,
+      border: "1.5px solid transparent",
+      background: normalBg,
+      backgroundClip: "padding-box, border-box",
+      boxShadow: "0 1px 4px rgba(0, 0, 0, 0.15)",
       color: "#ffffff",
       cursor: "pointer",
       outline: "none",
-      transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+      transition: "all 0.18s ease",
       zIndex: "9999",
       verticalAlign: "middle",
       userSelect: "none"
     });
 
     aiBtn.onmouseenter = function () {
-      aiBtn.style.background = "linear-gradient(135deg, rgba(99, 102, 241, 0.70) 0%, rgba(168, 85, 247, 0.70) 100%)";
-      aiBtn.style.borderColor = "#ffffff";
-      aiBtn.style.transform = "translateY(-1px)";
-      aiBtn.style.boxShadow = "0 4px 14px rgba(99, 102, 241, 0.45)";
+      aiBtn.style.background = hoverBg;
+      aiBtn.style.boxShadow = "0 0 10px rgba(192, 132, 252, 0.4)";
     };
     aiBtn.onmouseleave = function () {
-      aiBtn.style.background = "linear-gradient(135deg, rgba(99, 102, 241, 0.40) 0%, rgba(168, 85, 247, 0.40) 100%)";
-      aiBtn.style.borderColor = "rgba(255, 255, 255, 0.35)";
-      aiBtn.style.transform = "translateY(0px)";
-      aiBtn.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.15)";
+      aiBtn.style.background = normalBg;
+      aiBtn.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.15)";
     };
     aiBtn.onmousedown = function () {
-      aiBtn.style.transform = "scale(0.96)";
+      aiBtn.style.transform = "scale(0.97)";
     };
     aiBtn.onmouseup = function () {
-      aiBtn.style.transform = "translateY(-1px)";
+      aiBtn.style.transform = "scale(1)";
     };
 
     // Click handler -> Toggles Copilot-style Side Pane

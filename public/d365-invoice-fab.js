@@ -16,10 +16,10 @@ if (typeof window !== "undefined") {
   window.InvoiceAIAgent = InvoiceAIAgent;
 }
 
-// Active Cloudflare Tunnel Live URLs
-InvoiceAIAgent.BASE_TUNNEL_URL = "https://proven-grows-communist-households.trycloudflare.com";
-InvoiceAIAgent.SALES_AGENT_URL = "https://proven-grows-communist-households.trycloudflare.com/widget";
-InvoiceAIAgent.INVOICE_AGENT_URL = "https://proven-grows-communist-households.trycloudflare.com/invoice";
+// Active Permanent Render Live URLs
+InvoiceAIAgent.BASE_TUNNEL_URL = "https://sales-ai-agent-sfn2.onrender.com";
+InvoiceAIAgent.SALES_AGENT_URL = "https://sales-ai-agent-sfn2.onrender.com/widget";
+InvoiceAIAgent.INVOICE_AGENT_URL = "https://sales-ai-agent-sfn2.onrender.com/invoice";
 InvoiceAIAgent.WIDGET_URL = InvoiceAIAgent.INVOICE_AGENT_URL;
 
 InvoiceAIAgent.currentFormContext = null;
@@ -782,13 +782,7 @@ InvoiceAIAgent.injectTopBarButton = function () {
 
     var existingBtn = targetDoc.getElementById("d365-topbar-invoice-ai-btn");
     if (existingBtn) {
-      existingBtn.style.display = "inline-flex";
-      existingBtn.onclick = function (e) {
-        if (e && e.stopPropagation) e.stopPropagation();
-        var agent = topWin.__InvoiceAIAgent || InvoiceAIAgent;
-        agent.openSidePane();
-      };
-      return;
+      existingBtn.remove();
     }
 
     var headerBar = targetDoc.getElementById("headerBar") ||
@@ -807,10 +801,10 @@ InvoiceAIAgent.injectTopBarButton = function () {
       var title = (el.getAttribute("title") || "").toLowerCase();
       var txt = (el.innerText || el.textContent || "").toLowerCase();
 
-      if (aria.indexOf("copilot") !== -1 || 
-          dataId.indexOf("copilot") !== -1 || 
-          title.indexOf("copilot") !== -1 || 
-          txt.indexOf("copilot") !== -1) {
+      if (aria.indexOf("copilot") !== -1 ||
+        dataId.indexOf("copilot") !== -1 ||
+        title.indexOf("copilot") !== -1 ||
+        txt.indexOf("copilot") !== -1) {
         copilotBtn = el;
         break;
       }
@@ -858,40 +852,56 @@ InvoiceAIAgent.injectTopBarButton = function () {
       </span>
     `;
 
+    // Exact matching styles with Dynamics 365 Copilot button (Iconic Multi-Color Gradient Border)
+    var copilotBorderRadius = "4px";
+    if (copilotBtn) {
+      try {
+        var comp = targetDoc.defaultView.getComputedStyle(copilotBtn);
+        if (comp.borderRadius && comp.borderRadius !== "0px") {
+          copilotBorderRadius = comp.borderRadius;
+        }
+      } catch (e) {}
+    }
+
+    var normalBg = "linear-gradient(#002050, #002050) padding-box, linear-gradient(135deg, #38bdf8 0%, #818cf8 30%, #c084fc 60%, #f472b6 85%, #fb923c 100%) border-box";
+    var hoverBg = "linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.16)) padding-box, linear-gradient(135deg, #60a5fa 0%, #a78bfa 30%, #e879f9 60%, #f472b6 85%, #fb923c 100%) border-box";
+
     Object.assign(aiBtn.style, {
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
       height: "32px",
-      padding: "0 12px",
-      marginRight: "8px",
-      borderRadius: "16px",
-      background: "linear-gradient(135deg, rgba(16, 185, 129, 0.40) 0%, rgba(5, 150, 105, 0.40) 100%)",
-      border: "1px solid rgba(255, 255, 255, 0.35)",
-      boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+      padding: "0 10px",
+      marginRight: "6px",
+      alignSelf: "center",
+      borderRadius: copilotBorderRadius,
+      border: "1.5px solid transparent",
+      background: normalBg,
+      backgroundClip: "padding-box, border-box",
+      boxShadow: "0 1px 4px rgba(0, 0, 0, 0.15)",
       color: "#ffffff",
       cursor: "pointer",
       outline: "none",
-      transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+      transition: "all 0.18s ease",
       zIndex: "9999",
       verticalAlign: "middle",
       userSelect: "none"
     });
 
     aiBtn.onmouseenter = function () {
-      aiBtn.style.background = "linear-gradient(135deg, rgba(16, 185, 129, 0.70) 0%, rgba(5, 150, 105, 0.70) 100%)";
-      aiBtn.style.borderColor = "#ffffff";
-      aiBtn.style.transform = "translateY(-1px)";
-      aiBtn.style.boxShadow = "0 4px 14px rgba(16, 185, 129, 0.45)";
+      aiBtn.style.background = hoverBg;
+      aiBtn.style.boxShadow = "0 0 10px rgba(192, 132, 252, 0.4)";
     };
     aiBtn.onmouseleave = function () {
-      aiBtn.style.background = "linear-gradient(135deg, rgba(16, 185, 129, 0.40) 0%, rgba(5, 150, 105, 0.40) 100%)";
-      aiBtn.style.borderColor = "rgba(255, 255, 255, 0.35)";
-      aiBtn.style.transform = "translateY(0px)";
-      aiBtn.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.15)";
+      aiBtn.style.background = normalBg;
+      aiBtn.style.boxShadow = "0 1px 4px rgba(0, 0, 0, 0.15)";
     };
-    aiBtn.onmousedown = function () { aiBtn.style.transform = "scale(0.96)"; };
-    aiBtn.onmouseup = function () { aiBtn.style.transform = "translateY(-1px)"; };
+    aiBtn.onmousedown = function () {
+      aiBtn.style.transform = "scale(0.97)";
+    };
+    aiBtn.onmouseup = function () {
+      aiBtn.style.transform = "scale(1)";
+    };
 
     aiBtn.onclick = function (e) {
       if (e && e.stopPropagation) e.stopPropagation();

@@ -26,21 +26,21 @@
 </head>
 <body>
   <!--
-    Active Cloudflare Live URLs:
-    - Sales Agent:   https://proven-grows-communist-households.trycloudflare.com/widget
-    - Invoice Agent: https://proven-grows-communist-households.trycloudflare.com/invoice
+    Active Render Live URLs:
+    - Sales Agent:   https://sales-ai-agent-sfn2.onrender.com/widget
+    - Invoice Agent: https://sales-ai-agent-sfn2.onrender.com/invoice
   -->
   <iframe 
     id="agentFrame"
-    src="https://proven-grows-communist-households.trycloudflare.com/widget" 
+    src="https://sales-ai-agent-sfn2.onrender.com/widget" 
     allow="clipboard-read; clipboard-write; microphone"
     onload="console.log('Sales AI Agent widget loaded successfully')">
   </iframe>
 
   <script>
-    var CLOUDFLARE_BASE = "https://proven-grows-communist-households.trycloudflare.com";
-    var SALES_AGENT_URL = CLOUDFLARE_BASE + "/widget";
-    var INVOICE_AGENT_URL = CLOUDFLARE_BASE + "/invoice";
+    var RENDER_BASE = "https://sales-ai-agent-sfn2.onrender.com";
+    var SALES_AGENT_URL = RENDER_BASE + "/widget";
+    var INVOICE_AGENT_URL = RENDER_BASE + "/invoice";
 
     // Forward URL parameters (Lead ID, Name, data) to iframe
     try {

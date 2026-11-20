@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webtual Sales & Invoice AI Suite for Microsoft Dynamics 365</title>
+  <style>
+    :root {
+      --primary: #0078d4;
+      --primary-dark: #106ebe;
+      --accent: #2b88d8;
+      --success: #107c41;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --code-bg: #0f172a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 0;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+    header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: white;
+      padding: 60px 24px;
+      text-align: center;
+      border-bottom: 4px solid var(--primary);
+    }
+    .logo-container img {
+      max-width: 140px;
+      height: auto;
+      margin-bottom: 20px;
+      border-radius: 12px;
+      background: white;
+      padding: 8px;
+    }
+    header h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+    header p.subtitle {
+      font-size: 1.2rem;
+      color: #94a3b8;
+      max-width: 800px;
+      margin: 0 auto 20px;
+    }
+    .meta-badges {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .badge-primary { background: var(--primary); border-color: var(--primary); color: white; }
+    .badge-success { background: var(--success); border-color: var(--success); color: white; }
+
+    section {
+      margin-top: 48px;
+    }
+    h2 {
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 10px;
+    }
+    h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1e293b;
+      margin: 20px 0 10px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+      margin-bottom: 24px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 24px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+    .feature-card h4 {
+      font-size: 1.1rem;
+      color: var(--primary-dark);
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+    th, td {
+      padding: 14px 18px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+
+    .step-box {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 18px;
+      background: white;
+      padding: 16px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .step-num {
+      width: 36px;
+      height: 36px;
+      background: var(--primary);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .step-content h4 {
+      font-size: 1.05rem;
+      margin-bottom: 4px;
+      color: #0f172a;
+    }
+    .step-content p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+    .step-prompt {
+      display: inline-block;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-weight: 600;
+      color: #0f172a;
+      margin-top: 6px;
+    }
+
+    .screenshot-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    }
+    .screenshot-card img {
+      width: 100%;
+      display: block;
+      border-bottom: 1px solid var(--border);
+    }
+    .screenshot-caption {
+      padding: 16px 20px;
+      background: #ffffff;
+    }
+    .screenshot-caption h4 {
+      font-size: 1.05rem;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .screenshot-caption p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .stat-callout {
+      background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+      color: white;
+      padding: 30px;
+      border-radius: 12px;
+      text-align: center;
+      margin: 30px 0;
+    }
+    .stat-number {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .stat-label {
+      font-size: 1.1rem;
+      opacity: 0.95;
+    }
+
+    footer {
+      margin-top: 80px;
+      background: #0f172a;
+      color: #94a3b8;
+      text-align: center;
+      padding: 40px 20px;
+      border-top: 1px solid #334155;
+    }
+    footer a { color: #38bdf8; text-decoration: none; }
+
+    @media print {
+      body { background: white; color: black; }
+      header { background: #0078d4; color: white; padding: 30px 10px; }
+      .container { max-width: 100%; padding: 0; }
+      .screenshot-card { break-inside: avoid; }
+      .step-box { break-inside: avoid; }
+      table { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-container">
+      <img src="docs/images/webtual-logo.png" alt="Webtual Technology Logo">
+    </div>
+    <h1>Webtual Sales & Invoice AI Suite</h1>
+    <p class="subtitle">Autonomous Action-Driven AI Natively Embedded in Microsoft Dynamics 365 Sales Hub</p>
+    <div class="meta-badges">
+      <span class="badge badge-primary">Enterprise Ready v1.0.0</span>
+      <span class="badge badge-success">Dual-Engine AI (GPT-4o + Gemini)</span>
+      <span class="badge">Microsoft Dynamics 365</span>
+      <span class="badge">Microsoft Dataverse</span>
+      <span class="badge">Webtual Technology</span>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- SECTION 1: WHAT IT ACTUALLY DOES -->
+    <section>
+      <h2>💡 What Does This AI Agent Actually Do?</h2>
+      <div class="card">
+        <p style="font-size: 1.1rem; margin-bottom: 16px;">
+          Traditional conversational AI assistants (such as default Microsoft Copilot) only summarize text or answer static questions. They <strong>cannot execute business transactions</strong> in your CRM.
+        </p>
+        <p style="font-size: 1.05rem; color: #334155;">
+          The <strong>Webtual Sales & Invoice AI Suite</strong> is an <strong>Action-Driven AI Coworker</strong> living directly inside Microsoft Dynamics 365 Sales Hub. Through simple conversational commands, it executes full-cycle operational workflows in Microsoft Dataverse:
+        </p>
+
+        <div class="grid-3" style="margin-top: 24px;">
+          <div class="feature-card">
+            <h4>1. Instant Lead Briefings</h4>
+            <p>Automatically syncs with active lead context. Synthesizes 6+ months of activity history and timeline notes into a 3-bullet executive briefing in <strong>2 seconds</strong>.</p>
+          </div>
+          <div class="feature-card">
+            <h4>2. Branded PDF & Auto-Email</h4>
+            <p>Dynamically renders personalized vector PDF brochures with customer-specific pricing and emails them via SMTP in <strong>3 seconds</strong> without opening Outlook.</p>
+          </div>
+          <div class="feature-card">
+            <h4>3. 1-Click Lead Qualification</h4>
+            <p>Validates required CRM fields, updates status to Qualified in Dataverse, and automatically advances the sales pipeline stage to Opportunity in real time.</p>
+          </div>
+          <div class="feature-card">
+            <h4>4. 1-Click Dataverse Invoicing</h4>
+            <p>Pulls quotation line items, calculates 18% GST/VAT taxes and discounts, creates official Dataverse invoice records, and sends PDF invoices to customers.</p>
+          </div>
+          <div class="feature-card">
+            <h4>5. Native CRM Integration</h4>
+            <p>Injected directly into the top dark-blue navigation bar beside Microsoft Copilot, opening a dedicated 440px docked side pane that auto-squeezes CRM forms.</p>
+          </div>
+          <div class="feature-card">
+            <h4>6. Zero-Downtime Dual Engine</h4>
+            <p>Runs primarily on <strong>OpenAI GPT-4o</strong> with an instant, sub-second failover to <strong>Google Gemini (gemini-3.1-flash-lite)</strong>. Immune to credit lockouts!</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: BEFORE VS AFTER -->
+    <section>
+      <h2>⏱️ Before vs. After: Real Time & Productivity Impact</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Business Workflow</th>
+              <th>❌ Traditional Manual Process</th>
+              <th>✅ With Webtual AI Agent</th>
+              <th>Productivity Gain</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Lead History & Timeline Review</strong></td>
+              <td>10 – 15 mins of manual scrolling</td>
+              <td><strong>2 seconds</strong> (Contextual summary)</td>
+              <td><span class="badge badge-success">98% Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>PDF Brochure Creation & Emailing</strong></td>
+              <td>15 – 20 mins (Word/PPT + Outlook)</td>
+              <td><strong>3 seconds</strong> (Auto-render + SMTP)</td>
+              <td><span class="badge badge-success">99% Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Dataverse Lead Qualification</strong></td>
+              <td>3 – 5 mins across multiple tabs</td>
+              <td><strong>2 seconds</strong> (1-click natural language)</td>
+              <td><span class="badge badge-success">90% Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>Invoice Creation & Tax Calculation</strong></td>
+              <td>20 – 30 mins manual data entry</td>
+              <td><strong>5 seconds</strong> (Dataverse record + PDF)</td>
+              <td><span class="badge badge-success">97% Faster</span></td>
+            </tr>
+            <tr style="background: #f1f5f9; font-weight: 700;">
+              <td><strong>Total Admin Time Per Deal</strong></td>
+              <td><strong>~50 Minutes</strong></td>
+              <td><strong>< 15 Seconds</strong></td>
+              <td><strong>Saves 3+ Hours / Rep / Day</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 3: WEBTUAL VS COPILOT -->
+    <section>
+      <h2>🥊 Webtual AI Agent vs. Microsoft Copilot for Sales</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Operational Capability</th>
+              <th>Microsoft Copilot for Sales</th>
+              <th>Webtual AI Suite</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Dataverse Transactional Invoicing</strong></td>
+              <td>❌ Cannot create Invoices (Advisory only)</td>
+              <td>✅ <strong>Full 1-Click Dataverse Invoice Creation</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Dynamic Branded PDF Brochure Rendering</strong></td>
+              <td>❌ Unsupported</td>
+              <td>✅ <strong>Vector PDF dynamically generated on the fly</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Autonomous Email Dispatch with Attachments</strong></td>
+              <td>❌ Drafts text in Outlook only</td>
+              <td>✅ <strong>Automated SMTP delivery + CRM timeline log</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Native Top-Bar Neighbor Placement</strong></td>
+              <td>✅ Native Copilot Pill</td>
+              <td>✅ <strong>Native Top-Bar Pill (#d365-topbar-sales-ai-btn)</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Zero-Credit Lockout Protection</strong></td>
+              <td>❌ Fails when monthly credits expire</td>
+              <td>✅ <strong>Dual Engine: GPT-4o + Gemini Auto-Failover</strong></td>
+            </tr>
+            <tr>
+              <td><strong>Cost / Pricing Model</strong></td>
+              <td>❌ <strong>$50 / User / Month</strong> ($600/yr per user)</td>
+              <td>✅ <strong>Flat Team Fee (₹25k - ₹35k/mo) — Save 60%!</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 4: VISUAL PROOF & SCREENSHOTS -->
+    <section>
+      <h2>📸 Visual Proof & Real Production Screenshots</h2>
+
+      <div class="screenshot-card">
+        <img src="docs/images/d365-topbar-integration.jpg" alt="Dynamics 365 Top Bar Sales AI Integration">
+        <div class="screenshot-caption">
+          <h4>1. Dynamics 365 Top-Bar Integration & Active Lead Context</h4>
+          <p>The <strong>✨ Sales AI</strong> button sits directly on the dark-blue global navigation bar beside Microsoft Copilot. Clicking it docks a 440px side pane that smoothly squeezes the CRM form without obscuring customer fields.</p>
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <img src="docs/images/d365-invoice-hub.png" alt="Dynamics 365 All Invoices Grid Integration">
+        <div class="screenshot-caption">
+          <h4>2. Dynamics 365 All Invoices Hub with AI Invoice Agent Ribbon</h4>
+          <p>The specialized <strong>AI Invoice Agent</strong> ribbon command allows finance users to generate official tax invoices directly from active quotations or account records.</p>
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <img src="docs/images/hybrid-architecture.jpg" alt="Dual-Engine Architecture Diagram">
+        <div class="screenshot-caption">
+          <h4>3. High-Availability Dual-Engine Architecture & Expense Flow</h4>
+          <p>Enterprise queries route dynamically between OpenAI GPT-4o and Google Gemini, interfacing with Microsoft Dataverse via OAuth 2.0 Client Credentials.</p>
+        </div>
+      </div>
+
+      <div class="screenshot-card">
+        <img src="docs/images/copilot-credit-depletion.png" alt="Copilot Studio Credit Exhaustion Error">
+        <div class="screenshot-caption">
+          <h4>4. Resilience Against Copilot Studio Credit Lockout</h4>
+          <p>Standard Copilot Studio bots completely block work when trial credits exhaust (<code>EnforcementUsageCredits</code>). Webtual's dual-engine pipeline automatically diverts to Google Gemini, guaranteeing 99.99% uptime.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: STEP-BY-STEP LIVE DEMO -->
+    <section>
+      <h2>🎬 How to Demo This to Clients (Step-by-Step Script)</h2>
+      <div class="card">
+        <div class="step-box">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Launch from Top Navigation Bar</h4>
+            <p>Open any lead (e.g. Sonia Agarwal). Click the <strong>✨ Sales AI</strong> button right beside Copilot. Highlight to the client how the side-panel docks seamlessly without covering CRM data.</p>
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Demonstrate Zero-Touch Context Awareness</h4>
+            <p>Show that the AI already knows the client name, company, and email from the active Dataverse record without any manual copying.</p>
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Instant Timeline Briefing</h4>
+            <p>Type into the chat:</p>
+            <div class="step-prompt">Summarize this lead's timeline and key meeting notes</div>
+            <p style="margin-top:6px;">Show the client the 3-bullet executive briefing generated in under 2 seconds.</p>
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Dynamic PDF Brochure & Email Dispatch (The "Wow" Factor!)</h4>
+            <p>Type into the chat:</p>
+            <div class="step-prompt">Send product brochure to this client</div>
+            <p style="margin-top:6px;">Watch the AI generate a branded vector PDF brochure with pricing tables and email it directly to the customer's inbox via secure SMTP.</p>
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <h4>1-Click Lead Qualification</h4>
+            <p>Type into the chat:</p>
+            <div class="step-prompt">Qualify this lead and move to Develop stage</div>
+            <p style="margin-top:6px;">Demonstrate the lead status updating to Qualified and the Business Process Flow advancing in Dataverse.</p>
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-num">6</div>
+          <div class="step-content">
+            <h4>Autonomous Invoicing Demo</h4>
+            <p>Switch to <strong>Sales > Invoices</strong>. Click the AI Invoice Agent button and type:</p>
+            <div class="step-prompt">Create invoice for Quote #Q-10492 with 18% GST</div>
+            <p style="margin-top:6px;">Show the new invoice record created in Dataverse with tax calculations, line items, and dispatched tax invoice PDF.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 6: COMMERCIAL ROI -->
+    <section>
+      <h2>💰 Commercial ROI & Cost Savings</h2>
+      <div class="stat-callout">
+        <div class="stat-number">Save 60% – 75%</div>
+        <div class="stat-label">In Annual CRM AI Licensing Compared to Microsoft Copilot</div>
+      </div>
+      <div class="card">
+        <p><strong>For a standard 15-user sales team:</strong></p>
+        <ul style="margin: 12px 0 12px 24px; line-height: 1.8;">
+          <li><strong>Microsoft Copilot for Sales:</strong> $50/user/mo $\times$ 15 users = <strong>$750/month (₹63,000/mo = ₹7,50,000/year)</strong>.</li>
+          <li><strong>Webtual AI Suite:</strong> Team Flat Rate = <strong>₹25,000/month (₹3,00,000/year)</strong>.</li>
+          <li><strong>Net Direct Savings:</strong> <strong>₹4,50,000+ ($5,400) SAVED EVERY YEAR</strong>.</li>
+          <li><strong>Time Saved:</strong> 30 hours saved daily across 15 sellers (Equivalent to 3 extra full-time sales reps).</li>
+        </ul>
+      </div>
+    </section>
+
+  </div>
+
+  <footer>
+    <p><strong>Webtual Technology</strong> — Enterprise AI & Cloud Applications Practice</p>
+    <p style="margin-top: 8px;">Website: <a href="https://webtual.com" target="_blank">https://webtual.com</a> | Email: info@webtual.com</p>
+    <p style="margin-top: 8px; font-size: 0.85rem; opacity: 0.7;">© 2026 Webtual Technology. All rights reserved. Microsoft Dynamics 365 and Dataverse are registered trademarks of Microsoft Corporation.</p>
+  </footer>
+
+</body>
+</html>

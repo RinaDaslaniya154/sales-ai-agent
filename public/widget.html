@@ -849,6 +849,18 @@
 
     function closeAgentPane() {
       try {
+        // 1. Hide the widget card immediately on screen
+        const container = document.querySelector('.widget-container');
+        if (container) {
+          container.style.display = 'none';
+        }
+
+        // 2. If embedded inside a Dynamics 365 form iframe, hide the iframe element
+        if (window.frameElement) {
+          window.frameElement.style.display = 'none';
+        }
+
+        // 3. Post message to parent Dynamics 365 shell to close sidepane / drawer
         if (window.parent) {
           window.parent.postMessage({ action: "close_d365_sales_sidepane" }, "*");
           window.parent.postMessage({ action: "close_d365_invoice_sidepane" }, "*");

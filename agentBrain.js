@@ -289,7 +289,7 @@ class AgentBrain {
 
     // Check if user is responding Yes/No to open the searched lead in Dynamics 365
     if (session.pendingLeadToOpen) {
-      const isYes = /\b(yes|yeah|yup|sure|ok|okay|open|proceed|ha|haa|ji)\b/i.test(userMessage.trim());
+      const isYes = /\b(yes|yeah|yup|sure|ok|okay|open|proceed|ha|haa)\b/i.test(userMessage.trim());
       const isNo = /\b(no|nope|cancel|stop)\b/i.test(userMessage.trim());
 
       if (isYes) {
