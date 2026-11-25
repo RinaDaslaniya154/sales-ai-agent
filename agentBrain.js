@@ -662,6 +662,8 @@ class AgentBrain {
           const leadArgs = JSON.parse(toolCall.function.arguments);
           leadCreated = await dynamicsService.createLead(leadArgs);
 
+          const replyText = `✅ **Lead Created Successfully in Microsoft Dynamics 365!**\n- **Name:** ${leadArgs.fullname || 'Lead'}\n- **Email:** ${leadArgs.email || 'N/A'}\n- **Phone:** ${leadArgs.phone || 'N/A'}\n- **Company:** ${leadArgs.company || 'N/A'}\n- **Record ID:** \`${leadCreated.id || leadCreated._guid || 'Synced'}\`\n\nThe lead is now live in Dynamics 365 Sales Hub!`;
+
           session.messages.push(choice.message);
           session.messages.push({
             role: 'tool',
@@ -672,6 +674,8 @@ class AgentBrain {
               leadId: leadCreated.id,
             }),
           });
+          session.messages.push({ role: 'assistant', content: replyText });
+          return { reply: replyText, leadCreated };
         } else if (toolCall.function.name === 'query_dynamics_lead_history') {
           const args = JSON.parse(toolCall.function.arguments);
           const searchResult = await dynamicsService.searchLead(args.query);
@@ -2392,7 +2396,7 @@ RULES:
       const emailResult = await emailService.sendBrochure(targetEmail, extractedName);
       leadCreated.brochureDispatched = emailResult.brochure;
 
-      reply = `Lead successfully logged! 🎯\n\n* 👤 **Lead Name:** ${extractedName}\n* 🏢 **Company:** ${extractedCompany}\n* 📧 **Email:** ${targetEmail}\n* 📞 **Phone:** ${targetPhone}\n* 🆔 **Dynamics 365 ID:** \`${leadCreated.id}\`\n\n📄 **Action Taken:** Auto-dispatched Sales Kit PDF to ${targetEmail}. The lead is now live in your **Dynamics 365 Sales Hub**!`;
+      reply = `✅ **Lead Created Successfully in Microsoft Dynamics 365!**\n- **Name:** ${extractedName}\n- **Email:** ${targetEmail}\n- **Phone:** ${targetPhone}\n- **Company:** ${extractedCompany}\n- **Record ID:** \`${leadCreated.id}\`\n\nThe lead is now live in Dynamics 365 Sales Hub!`;
       return { reply, leadCreated };
     }
 
