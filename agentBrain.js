@@ -1064,7 +1064,7 @@ class AgentBrain {
       if (call.name === 'save_lead_to_dynamics') {
         const leadArgs = call.args;
         leadCreated = await dynamicsService.createLead(leadArgs);
-        replyText = `✅ **Lead Created in Microsoft Dynamics 365!**\n- **Name:** ${leadArgs.fullname || 'Lead'}\n- **Email:** ${leadArgs.email || 'N/A'}\n- **Phone:** ${leadArgs.phone || 'N/A'}\n- **Company:** ${leadArgs.company || 'N/A'}\n- **Record ID:** \`${leadCreated.id || leadCreated._guid || 'Synced'}\`\n\nThe lead is now live in Dynamics 365 Sales Hub!`;
+        replyText = `✅ **Lead Created Successfully in Microsoft Dynamics 365!**\n- **Name:** ${leadArgs.fullname || 'Lead'}\n- **Email:** ${leadArgs.email || 'N/A'}\n- **Phone:** ${leadArgs.phone || 'N/A'}\n- **Company:** ${leadArgs.company || 'N/A'}\n- **Record ID:** \`${leadCreated.id || leadCreated._guid || 'Synced'}\`\n\nThe lead is now live in Dynamics 365 Sales Hub!`;
       } else if (call.name === 'query_dynamics_lead_history') {
         const isActuallyBrochureRequest = /\b(send|email|mail|dispatch)\b/i.test(userMessage) && /\b(brochure|catalog|pdf|pricing)\b/i.test(userMessage);
         if (isActuallyBrochureRequest) {
