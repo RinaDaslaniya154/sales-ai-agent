@@ -1030,8 +1030,8 @@ class AgentBrain {
     }
 
     // 🚀 Multi-Tier Model Fallback:
-    const primaryModel = this.modelName || 'gemini-3.1-flash-lite';
-    const fallbackCandidates = [primaryModel, 'gemini-3.1-flash-lite-preview', 'gemini-3.8-flash']
+    const primaryModel = (this.modelName && this.modelName.startsWith('gemini')) ? this.modelName : 'gemini-2.5-flash';
+    const fallbackCandidates = [primaryModel, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
       .filter((val, idx, arr) => arr.indexOf(val) === idx);
 
     let result = null;
