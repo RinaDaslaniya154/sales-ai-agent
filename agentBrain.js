@@ -529,8 +529,8 @@ class AgentBrain {
       isExplicitLeadName &&
       (msgLower.includes(aiFirstWord) || msgLower.includes(cleanAiName.toLowerCase()));
 
-    // If user explicitly said "this lead" / "current lead" OR didn't mention any person's name at all, use active lead
-    if ((mentionsThisLead || (!userExplicitlyTypedAiName && !isExplicitLeadName)) && activeLeadId) {
+    // If user explicitly said "this lead" / "current lead" OR didn't mention any person's name in their current message, use active lead
+    if ((mentionsThisLead || !userExplicitlyTypedAiName) && activeLeadId) {
       return {
         leadId: activeLeadId,
         leadName: activeLeadName || 'Active Lead',
@@ -538,7 +538,7 @@ class AgentBrain {
     }
 
     // Otherwise, search Dynamics 365 for the explicitly named lead
-    const lookupName = (userExplicitlyTypedAiName || isExplicitLeadName) ? cleanAiName : (activeLeadName || cleanAiName);
+    const lookupName = userExplicitlyTypedAiName ? cleanAiName : (activeLeadName || cleanAiName);
     if (lookupName) {
       const searchResult = await dynamicsService.findLeadForDelete(lookupName);
       if (searchResult.found && searchResult.leads && searchResult.leads.length > 0) {
