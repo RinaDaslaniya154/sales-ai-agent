@@ -27,6 +27,7 @@ Directives:
 4. Always respond concisely, briefly, and directly (under 3 lines).
 5. NEVER generate large markdown tables or lengthy paragraphs. Use clean, compact bullet points with emoji badges.
 6. When mentioning an invoice or customer where an invoice ID is known, format it as a clickable link [Customer Name](d365:invoice:ID) so the user can click to open it directly in Dynamics 365.
+7. You can ALSO answer general business, tax/GST, finance, and general knowledge questions helpfully using your AI knowledge without refusing.
 `;
 
 class InvoiceBrain {

@@ -27,6 +27,7 @@ Internal Assistant Directives:
 - When a sales rep asks about past conversations, client notes, or timeline history, query Dynamics 365 via 'query_dynamics_lead_history'.
 - When a sales rep instructs you to email or send the brochure/catalog/sales kit to a prospect or lead (e.g. "send brochure to Rina Patel"), trigger 'send_product_brochure_email'.
 - When the user does NOT explicitly specify a different person by name, ALWAYS use the active open lead from [Current Dynamics 365 Lead Context]. NEVER reuse older lead names from prior chat turns.
+- You are ALSO encouraged to answer general business, market research, industry lists, sales strategy, email drafting, and general knowledge questions helpfully using your AI knowledge (never refuse general queries by saying you only do CRM operations).
 - Always respond professionally, concisely, and efficiently as an enterprise sales colleague.
 `;
 
@@ -662,8 +663,6 @@ class AgentBrain {
           const leadArgs = JSON.parse(toolCall.function.arguments);
           leadCreated = await dynamicsService.createLead(leadArgs);
 
-          const replyText = `✅ **Lead Created Successfully in Microsoft Dynamics 365!**\n- **Name:** ${leadArgs.fullname || 'Lead'}\n- **Email:** ${leadArgs.email || 'N/A'}\n- **Phone:** ${leadArgs.phone || 'N/A'}\n- **Company:** ${leadArgs.company || 'N/A'}\n- **Record ID:** \`${leadCreated.id || leadCreated._guid || 'Synced'}\`\n\nThe lead is now live in Dynamics 365 Sales Hub!`;
-
           session.messages.push(choice.message);
           session.messages.push({
             role: 'tool',
@@ -674,8 +673,6 @@ class AgentBrain {
               leadId: leadCreated.id,
             }),
           });
-          session.messages.push({ role: 'assistant', content: replyText });
-          return { reply: replyText, leadCreated };
         } else if (toolCall.function.name === 'query_dynamics_lead_history') {
           const args = JSON.parse(toolCall.function.arguments);
           const searchResult = await dynamicsService.searchLead(args.query);
@@ -1030,8 +1027,8 @@ class AgentBrain {
     }
 
     // 🚀 Multi-Tier Model Fallback:
-    const primaryModel = (this.modelName && this.modelName.startsWith('gemini')) ? this.modelName : 'gemini-2.5-flash';
-    const fallbackCandidates = [primaryModel, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    const primaryModel = this.modelName || 'gemini-3.1-flash-lite';
+    const fallbackCandidates = [primaryModel, 'gemini-3.1-flash-lite-preview', 'gemini-3.8-flash']
       .filter((val, idx, arr) => arr.indexOf(val) === idx);
 
     let result = null;
@@ -2396,7 +2393,7 @@ RULES:
       const emailResult = await emailService.sendBrochure(targetEmail, extractedName);
       leadCreated.brochureDispatched = emailResult.brochure;
 
-      reply = `✅ **Lead Created Successfully in Microsoft Dynamics 365!**\n- **Name:** ${extractedName}\n- **Email:** ${targetEmail}\n- **Phone:** ${targetPhone}\n- **Company:** ${extractedCompany}\n- **Record ID:** \`${leadCreated.id}\`\n\nThe lead is now live in Dynamics 365 Sales Hub!`;
+      reply = `Lead successfully logged! 🎯\n\n* 👤 **Lead Name:** ${extractedName}\n* 🏢 **Company:** ${extractedCompany}\n* 📧 **Email:** ${targetEmail}\n* 📞 **Phone:** ${targetPhone}\n* 🆔 **Dynamics 365 ID:** \`${leadCreated.id}\`\n\n📄 **Action Taken:** Auto-dispatched Sales Kit PDF to ${targetEmail}. The lead is now live in your **Dynamics 365 Sales Hub**!`;
       return { reply, leadCreated };
     }
 
