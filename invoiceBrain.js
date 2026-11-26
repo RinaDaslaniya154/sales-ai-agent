@@ -14,9 +14,9 @@ Role: Specialized Microsoft Dynamics 365 Invoice & Billing AI Copilot.
 Target Audience: Sales Executives, Account Managers, Billing Specialists, and Finance Teams.
 
 Directives:
-1. When on a Quote record (entity: "quote"):
+1. Quote & Quote-to-Invoice Conversion (Works from ANY screen — Quote, Invoice, or List):
    - Assist in reviewing quote line items, calculating discounts, and checking tax eligibility.
-   - When requested to "convert to invoice", "make invoice", "generate invoice", or "bill client", call 'convert_quote_to_invoice'.
+   - Whenever requested to "convert to invoice", "create an invoice", "make invoice", "generate invoice", or "bill client" from a quote/quotation, ALWAYS call 'convert_quote_to_invoice' immediately. NEVER ask the user to navigate to a Quote record.
 2. When on an Invoice record (entity: "invoice"):
    - When requested to "send to client", "email invoice", "dispatch bill", call 'generate_and_email_invoice'.
    - When requested to "preview PDF", "download invoice", or "generate PDF", call 'generate_invoice_pdf'.
@@ -101,6 +101,13 @@ class InvoiceBrain {
     // 3. Direct Mark as Paid chip
     if (/^(mark as paid|mark paid|paid)$/i.test(msgTrimmed)) {
       return await this.handleMarkPaid(session, context, userMessage);
+    }
+
+    // 4. Direct Convert Quote to Invoice fast-path (works from any screen)
+    const mentionsInvoiceActionFast = /\b(convert|create|make|generate|bill)\b/i.test(textLower) && /\b(invoice|bill)\b/i.test(textLower);
+    const mentionsQuoteFast = (session.currentEntity === 'quote') || /\b(quotation|quote|proposal|based on|from)\b/i.test(textLower);
+    if ((mentionsInvoiceActionFast && mentionsQuoteFast) || /\b(convert to invoice|convert quote)\b/i.test(textLower)) {
+      return await this.handleConvertQuote(session, context, userMessage);
     }
 
     // ── 🤖 AI-FIRST ARCHITECTURE: Send all conversational and natural language questions to OpenAI GPT-4o or Gemini AI ──
