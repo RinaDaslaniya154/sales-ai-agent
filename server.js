@@ -146,6 +146,68 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Streaming Chat Endpoint (SSE)
+app.post('/api/chat-stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const sendEvent = (type, payload) => {
+    try {
+      res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`);
+    } catch (e) { }
+  };
+
+  try {
+    const { message, sessionId = 'default-session', currentLeadId, currentLeadName, currentLeadCompany, currentLeadEmail, callerUserId, callerUserName, timezone } = req.body;
+    if (!message) {
+      sendEvent('error', { error: 'Message is required' });
+      return res.end();
+    }
+
+    const result = await dynamicsService.runWithUser(callerUserId, () =>
+      agentBrain.processMessageStream(
+        sessionId,
+        message,
+        {
+          currentLeadId,
+          currentLeadName,
+          currentLeadCompany,
+          currentLeadEmail,
+          callerUserId,
+          callerUserName,
+          userTimezone: timezone || 'Asia/Kolkata',
+        },
+        (chunk) => sendEvent('chunk', { text: chunk }),
+        (status) => sendEvent('status', { text: status })
+      )
+    );
+
+    if (currentLeadId && result && result.reply) {
+      const cleanId = currentLeadId.replace(/[{}]/g, '');
+      dynamicsService.getChatTranscript(cleanId).then(existing => {
+        const history = (existing && existing.messages) ? existing.messages : [];
+        history.push({ sender: 'user', text: message });
+        history.push({ sender: 'ai', text: result.reply });
+        dynamicsService.saveChatTranscript(cleanId, history).catch(e => console.error('Auto-save note error:', e.message));
+      }).catch(e => console.error('Fetch note error:', e.message));
+    }
+
+    sendEvent('done', {
+      reply: result?.reply || '',
+      leadCreated: result?.leadCreated || null,
+      navigateToLead: result?.navigateToLead || null,
+    });
+    res.end();
+  } catch (error) {
+    console.error('Stream chat error:', error);
+    sendEvent('error', { error: error.message });
+    res.end();
+  }
+});
+
 // Captured Leads List
 app.get('/api/leads', (req, res) => {
   res.json({

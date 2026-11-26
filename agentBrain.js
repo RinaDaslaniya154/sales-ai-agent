@@ -254,6 +254,117 @@ class AgentBrain {
     ];
   }
 
+  async processMessageStream(sessionId, userMessage, context = {}, onChunk = () => {}, onStatus = () => {}) {
+    // Prepare session and handle fast-paths identically
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, {
+        messages: [
+          {
+            role: 'system',
+            content: `You are the internal Microsoft Dynamics 365 Sales Copilot assisting sales executives and administrators.\n${SALES_TEAM_PLAYBOOK}\nHelp the sales team log leads, look up client conversation logs, and send sales kits. Always be efficient and concise.`,
+          },
+        ],
+        extractedLead: {},
+        pendingDelete: null,
+        pendingConvert: null,
+        pendingLeadToOpen: null,
+      });
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (context.currentLeadId && context.currentLeadId !== session.currentLeadId) {
+      session.currentLeadId = context.currentLeadId;
+      if (!context.currentLeadName) {
+        const freshLead = await dynamicsService.getLeadById(context.currentLeadId);
+        if (freshLead && freshLead.fullname) {
+          session.currentLeadName = freshLead.fullname;
+          context.currentLeadName = freshLead.fullname;
+        }
+      }
+    }
+    if (context.currentLeadName) session.currentLeadName = context.currentLeadName;
+    if (context.currentLeadId) session.currentLeadId = context.currentLeadId;
+    if (context.currentLeadCompany) session.currentLeadCompany = context.currentLeadCompany;
+    if (context.currentLeadEmail) session.currentLeadEmail = context.currentLeadEmail;
+    if (context.userTimezone) session.userTimezone = context.userTimezone;
+
+    // Stream OpenAI directly when no fast-path intercepts, or fall back to processMessage
+    const msgTrimmed = userMessage.trim().toLowerCase();
+    const isInteractivePending = Boolean(session.pendingLeadToOpen || session.pendingDelete);
+    const looksLikeAction = /\b(create|add|log|delete|remove|schedule|book|task|todo|qualify|convert|invoice|brochure|pdf|update|change|set|find|search|who is|details|phone|email|company|website)\b/i.test(msgTrimmed);
+
+    if (!isInteractivePending && !looksLikeAction && this.isOpenAI) {
+      try {
+        session.messages.push({ role: 'user', content: userMessage });
+        const stream = await this.openai.chat.completions.create({
+          model: this.modelName || 'gpt-4o',
+          messages: session.messages,
+          stream: true,
+        });
+        let fullText = '';
+        for await (const part of stream) {
+          const delta = part.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+            onChunk(delta);
+          }
+        }
+        if (fullText) {
+          session.messages.push({ role: 'assistant', content: fullText });
+          return { reply: fullText, leadCreated: null };
+        }
+        session.messages.pop();
+      } catch (e) {
+        console.warn('OpenAI stream fallback:', e.message);
+        if (session.messages[session.messages.length - 1]?.role === 'user') session.messages.pop();
+      }
+    } else if (!isInteractivePending && !looksLikeAction && this.isGemini) {
+      try {
+        session.messages.push({ role: 'user', content: userMessage });
+        let systemInstruction = `You are the internal Microsoft Dynamics 365 Sales Copilot assisting sales executives and administrators.\n${SALES_TEAM_PLAYBOOK}\nHelp the sales team log leads, look up client conversation logs, and send sales kits. Always be efficient, concise, and helpful.`;
+        const activeLead = context.currentLeadName || session.currentLeadName;
+        if (activeLead) {
+          systemInstruction += `\n\n[Current Dynamics 365 Lead Context]: "${activeLead}".`;
+        }
+        const history = [];
+        for (const msg of session.messages.slice(1, -1)) {
+          if (msg.role === 'user' && typeof msg.content === 'string') {
+            history.push({ role: 'user', parts: [{ text: msg.content }] });
+          } else if (msg.role === 'assistant' && typeof msg.content === 'string') {
+            history.push({ role: 'model', parts: [{ text: msg.content }] });
+          }
+        }
+        const model = this.genAI.getGenerativeModel({
+          model: this.modelName || 'gemini-3.1-flash-lite',
+          systemInstruction,
+        });
+        const chat = model.startChat({ history });
+        const streamRes = await chat.sendMessageStream(userMessage);
+        let fullText = '';
+        for await (const chunk of streamRes.stream) {
+          const txt = chunk.text();
+          if (txt) {
+            fullText += txt;
+            onChunk(txt);
+          }
+        }
+        if (fullText) {
+          session.messages.push({ role: 'assistant', content: fullText });
+          return { reply: fullText, leadCreated: null };
+        }
+        session.messages.pop();
+      } catch (e) {
+        console.warn('Gemini stream fallback:', e.message);
+        if (session.messages[session.messages.length - 1]?.role === 'user') session.messages.pop();
+      }
+    }
+
+    if (looksLikeAction) {
+      onStatus('⏳ Processing in Dynamics 365...');
+    }
+    return await this.processMessage(sessionId, userMessage, context);
+  }
+
   async processMessage(sessionId, userMessage, context = {}) {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, {
@@ -1245,6 +1356,7 @@ ALWAYS conclude on a new line with:
       } else if (call.name === 'query_dynamics_appointments') {
         const userMsgLower = (userMessage || '').toLowerCase();
         let targetLeadId = null;
+        let leadArgs
         // Only restrict to a specific lead if user explicitly asks for "this lead", "him", "her", or "this record"
         if (/\b(this lead|with him|with her|with this client|this record)\b/i.test(userMsgLower) && session.currentLeadId) {
           targetLeadId = session.currentLeadId;
@@ -1578,6 +1690,7 @@ RULES:
       }
     }
 
+
     // ✅ Detect convert-to-opportunity intent
     if (
       (text.includes('convert') || text.includes('qualify') || text.includes('move to opportunity') ||
@@ -1586,7 +1699,7 @@ RULES:
       (text.includes('lead') || text.includes('opportunity') || /[a-z]+ [a-z]+/.test(text))
     ) {
       // Extract name from message
-      const STOPWORDS_C = /\b(convert|qualify|lead|to|opportunity|from|in|the|make|create|move|please|ni|nu|na|ne|no|kro|karo|do|kari|aa|this)\b/gi;
+      const STOPWORDS_C = /\b(convert|qualify|lead|to|opportunity|from|in|the|make|create|move|please|this)\b/gi;
       let convertName = message.replace(STOPWORDS_C, '').replace(/\s+/g, ' ').trim();
 
       // Gujarati / Hinglish match: "[Name] ni lead convert kro"
@@ -1602,6 +1715,7 @@ RULES:
         const caps = message.match(/\b[A-Z][a-z]{1,20}(\s+[A-Z][a-z]{1,20})?\b/g) || [];
         convertName = caps[0] || '';
       }
+
 
       if (!convertName || convertName.length < 2) {
         convertName = context.currentLeadName || session.currentLeadName || '';

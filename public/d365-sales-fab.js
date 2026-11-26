@@ -94,6 +94,14 @@ SalesAIAgent.onLoad = function (executionContext) {
 
     // 7. Start top-level navigation watcher
     SalesAIAgent.startNavigationWatcher();
+
+    // 8. Silent Wake-Up Ping so Render backend is warm before user opens chat
+    try {
+      if (!topWin.__salesAiWarmedAt || (Date.now() - topWin.__salesAiWarmedAt) > 240000) {
+        topWin.__salesAiWarmedAt = Date.now();
+        fetch(SalesAIAgent.BASE_TUNNEL_URL + "/api/status", { mode: "cors" }).catch(function () { });
+      }
+    } catch (eWake) { }
   } catch (err) {
     console.error("Error in SalesAIAgent.onLoad:", err);
   }
