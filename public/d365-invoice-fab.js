@@ -59,11 +59,12 @@ InvoiceAIAgent.onLoad = function (executionContext, selectedControl) {
 
     if (isFormLoadEvent) {
       InvoiceAIAgent.currentFormContext = executionContext.getFormContext();
-      // On form load, initialize top bar button, floating button & watcher
+      topWin.__currentInvoiceFormContext = InvoiceAIAgent.currentFormContext;
       if (InvoiceAIAgent.isInvoiceActive()) {
         InvoiceAIAgent.injectTopBarButton();
         InvoiceAIAgent.initUI();
         InvoiceAIAgent.startNavigationWatcher();
+        InvoiceAIAgent.refreshActiveContext();
       }
       return;
     }
@@ -428,12 +429,47 @@ InvoiceAIAgent.closeNativeSidePane = function () {
  * Extract active Invoice / Quote context from form
  */
 InvoiceAIAgent.getContext = function (primaryControl, selectedControl) {
-  var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (window.top && window.top.Xrm);
+  var topWin = (typeof window !== "undefined" && window.top) ? window.top : (typeof window !== "undefined" ? window : globalThis);
+  var xrm = window.Xrm || (window.parent && window.parent.Xrm) || (topWin && topWin.Xrm);
   var recordId = "";
   var recordName = "";
   var customerName = "";
   var totalAmount = "";
   var entityName = "invoice";
+
+  // Priority 0: Always extract active ID from top-level URL
+  try {
+    var href = (topWin.location && topWin.location.href) || "";
+    var mId = href.match(/[?&]id=([a-f0-9\-]{36})/i);
+    if (mId && mId[1]) {
+      recordId = mId[1].replace(/[{}]/g, "");
+    }
+  } catch (eUrl) { }
+
+  // Priority 0.5: Direct DOM Header Extraction (Guarantees active record on screen!)
+  try {
+    var targetDoc = topWin.document || document;
+    var headerEl = targetDoc.querySelector('[data-id="header_title"]') ||
+      targetDoc.querySelector('h1[data-id="header_title"]') ||
+      targetDoc.querySelector('h1[title]') ||
+      targetDoc.querySelector('h1');
+    if (headerEl && headerEl.textContent) {
+      var hTxt = headerEl.textContent.trim();
+      if (hTxt && hTxt.length > 2) {
+        recordName = hTxt;
+        var pName = hTxt.replace(/^Sales\s*Invoice\s*-\s*/i, "").trim();
+        if (pName && pName !== hTxt) {
+          customerName = pName;
+        }
+      }
+    }
+    var custLookup = targetDoc.querySelector('[data-id="customerid.fieldControl-LookupResultsDropdown_customerid_selected_tag_text"]') ||
+      targetDoc.querySelector('[data-id="customerid"] [role="link"]') ||
+      targetDoc.querySelector('[aria-label="Customer"]');
+    if (custLookup && custLookup.textContent) {
+      customerName = custLookup.textContent.trim();
+    }
+  } catch (eDom) { }
 
   // 1. Check formContext from topWin or local (Handles Focused View)
   try {

@@ -53,6 +53,30 @@ app.get('/api/lead-by-id', async (req, res) => {
   }
 });
 
+// Get Invoice Details by GUID
+app.get('/api/invoice-by-id', async (req, res) => {
+  try {
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: 'ID is required' });
+    const cleanId = id.replace(/[{}]/g, '');
+    const invoice = await dynamicsService.getInvoiceById(cleanId);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    res.json({
+      success: true,
+      invoice: {
+        id: cleanId,
+        name: invoice.name || ('Sales Invoice - ' + (invoice.customerName || 'Customer')),
+        customer: invoice.customerName || '',
+        total: invoice.totalAmount || '',
+        duedate: invoice.dueDate || '',
+        status: invoice.status || 'Active'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch invoice', details: err.message });
+  }
+});
+
 // Chat History Endpoints (Dynamics 365 Dataverse Notes Persistence)
 app.get('/api/chat-history', async (req, res) => {
   try {

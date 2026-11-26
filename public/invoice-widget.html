@@ -842,6 +842,17 @@
 
       if (detectedId) {
         activeRecordId = String(detectedId).replace(/[{}]/g, '').trim();
+        fetch('/api/invoice-by-id?id=' + encodeURIComponent(activeRecordId))
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data && data.success && data.invoice) {
+              if (data.invoice.name) activeRecordName = data.invoice.name;
+              if (data.invoice.customer) activeCustomer = data.invoice.customer;
+              if (data.invoice.total) activeAmount = '₹' + Number(data.invoice.total).toLocaleString('en-IN');
+              applyContext();
+            }
+          })
+          .catch(function(e) { console.warn('Fetch invoice notice:', e); });
       }
 
       applyContext();
