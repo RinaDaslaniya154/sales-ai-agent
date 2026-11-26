@@ -471,7 +471,7 @@ InvoiceAIAgent.getContext = function (primaryControl, selectedControl) {
     }
   } catch (eDom) { }
 
-  // 1. Check formContext from topWin or local (Handles Focused View)
+  // 1. Check formContext from topWin or local ONLY if it matches the active URL recordId (or if URL recordId is empty)
   try {
     var fc = InvoiceAIAgent.currentFormContext || topWin.__currentInvoiceFormContext ||
       (primaryControl && primaryControl.data ? primaryControl : null) ||
@@ -479,26 +479,31 @@ InvoiceAIAgent.getContext = function (primaryControl, selectedControl) {
 
     if (fc && fc.data && fc.data.entity) {
       var rawId = fc.data.entity.getId();
-      if (rawId) recordId = rawId.replace(/[{}]/g, "");
+      var fcId = rawId ? rawId.replace(/[{}]/g, "").toLowerCase() : "";
+      var urlIdLower = recordId ? recordId.toLowerCase() : "";
 
-      entityName = fc.data.entity.getEntityName() || "invoice";
+      if (!urlIdLower || !fcId || fcId === urlIdLower) {
+        if (fcId) recordId = fcId;
 
-      var nameAttr = fc.getAttribute("name");
-      if (nameAttr && nameAttr.getValue()) recordName = nameAttr.getValue();
+        entityName = fc.data.entity.getEntityName() || "invoice";
 
-      var custAttr = fc.getAttribute("customerid") || fc.getAttribute("potentialcustomerid");
-      if (custAttr && custAttr.getValue() && custAttr.getValue()[0]) {
-        customerName = custAttr.getValue()[0].name || "";
-      }
+        var nameAttr = fc.getAttribute("name");
+        if (nameAttr && nameAttr.getValue()) recordName = nameAttr.getValue();
 
-      var amtAttr = fc.getAttribute("totalamount");
-      if (amtAttr && amtAttr.getValue()) totalAmount = amtAttr.getValue();
+        var custAttr = fc.getAttribute("customerid") || fc.getAttribute("potentialcustomerid");
+        if (custAttr && custAttr.getValue() && custAttr.getValue()[0]) {
+          customerName = custAttr.getValue()[0].name || "";
+        }
 
-      var dueAttr = fc.getAttribute("duedate");
-      var dueDate = "";
-      if (dueAttr && dueAttr.getValue()) {
-        var d = dueAttr.getValue();
-        dueDate = (d instanceof Date) ? d.toISOString().split("T")[0] : String(d);
+        var amtAttr = fc.getAttribute("totalamount");
+        if (amtAttr && amtAttr.getValue()) totalAmount = amtAttr.getValue();
+
+        var dueAttr = fc.getAttribute("duedate");
+        var dueDate = "";
+        if (dueAttr && dueAttr.getValue()) {
+          var d = dueAttr.getValue();
+          dueDate = (d instanceof Date) ? d.toISOString().split("T")[0] : String(d);
+        }
       }
     }
   } catch (ex) {
