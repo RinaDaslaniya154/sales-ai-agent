@@ -269,6 +269,7 @@ SalesAIAgent.getLeadContext = function () {
   var leadId = "";
   var leadName = "";
   var company = "";
+  var email = "";
   var userId = "";
   var userName = "";
 
@@ -300,6 +301,9 @@ SalesAIAgent.getLeadContext = function () {
 
       var compAttr = fc.getAttribute("companyname");
       if (compAttr && compAttr.getValue()) company = compAttr.getValue();
+
+      var emailAttr = fc.getAttribute("emailaddress1");
+      if (emailAttr && emailAttr.getValue()) email = emailAttr.getValue();
     }
 
     // Fallback: check UCI page context if not found
@@ -313,7 +317,7 @@ SalesAIAgent.getLeadContext = function () {
     console.warn("Could not extract lead context:", ex);
   }
 
-  return { leadId: leadId, leadName: leadName, company: company, userId: userId, userName: userName };
+  return { leadId: leadId, leadName: leadName, company: company, email: email, userId: userId, userName: userName };
 };
 
 /**
@@ -326,6 +330,7 @@ SalesAIAgent.getTargetUrl = function () {
     params.push("id=" + encodeURIComponent(ctx.leadId));
     params.push("leadname=" + encodeURIComponent(ctx.leadName || ""));
     params.push("company=" + encodeURIComponent(ctx.company || ""));
+    if (ctx.email) params.push("email=" + encodeURIComponent(ctx.email));
   }
   if (ctx.userId) {
     params.push("userid=" + encodeURIComponent(ctx.userId));

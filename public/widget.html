@@ -839,7 +839,8 @@
 
     if (activeLeadName) {
       applyLeadContext(activeLeadName, activeCompany, activeEmail, activeLeadId);
-    } else if (activeLeadId) {
+    }
+    if (activeLeadId && (!activeLeadName || !activeEmail)) {
       fetch(`/api/lead-by-id?id=${encodeURIComponent(activeLeadId)}`)
         .then(r => r.json())
         .then(data => {
