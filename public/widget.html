@@ -1027,7 +1027,7 @@
                   typingIndicator.style.display = 'none';
                   if (!liveBubble) liveBubble = createLiveAiBubble();
                   streamedText += evt.text;
-                  liveBubble.bubble.innerHTML = formatMessage(streamedText);
+                  liveBubble.bubble.innerHTML = formatMarkdown(streamedText);
                   chatArea.scrollTop = chatArea.scrollHeight;
                 } else if (evt.type === 'done') {
                   data = evt;
@@ -1050,8 +1050,8 @@
 
         if (finalReply) {
           if (liveBubble) {
-            liveBubble.bubble.innerHTML = formatMessage(finalReply);
-            saveMessageToStorage(finalReply, 'ai');
+            liveBubble.bubble.innerHTML = formatMarkdown(finalReply);
+            saveMessageToStorage({ type: 'message', text: finalReply, sender: 'ai', timestamp: Date.now() });
           } else {
             appendMessage(finalReply, 'ai');
           }
