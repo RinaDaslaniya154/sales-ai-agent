@@ -105,18 +105,22 @@ app.post('/api/chat-history', async (req, res) => {
 // Chat Endpoint
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, sessionId = 'default-session', currentLeadId, currentLeadName, currentLeadCompany, currentLeadEmail, timezone } = req.body;
+    const { message, sessionId = 'default-session', currentLeadId, currentLeadName, currentLeadCompany, currentLeadEmail, callerUserId, callerUserName, timezone } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    const result = await agentBrain.processMessage(sessionId, message, {
-      currentLeadId,
-      currentLeadName,
-      currentLeadCompany,
-      currentLeadEmail,
-      userTimezone: timezone || 'Asia/Kolkata',
-    });
+    const result = await dynamicsService.runWithUser(callerUserId, () =>
+      agentBrain.processMessage(sessionId, message, {
+        currentLeadId,
+        currentLeadName,
+        currentLeadCompany,
+        currentLeadEmail,
+        callerUserId,
+        callerUserName,
+        userTimezone: timezone || 'Asia/Kolkata',
+      })
+    );
 
     // Auto-save to Dynamics 365 Notes if active lead ID is present
     if (currentLeadId && result.reply) {

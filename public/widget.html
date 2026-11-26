@@ -538,7 +538,8 @@
       <div class="widget-actions">
         <button class="icon-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle Light/Dark">☀️</button>
         <button class="icon-btn" onclick="clearChat()" title="Reset Chat">🔄</button>
-        <button class="icon-btn" onclick="closeAgentPane()" title="Close Assistant" style="font-size:12px;font-weight:700;">✕</button>
+        <button class="icon-btn" onclick="closeAgentPane()" title="Close Assistant"
+          style="font-size:12px;font-weight:700;">✕</button>
       </div>
     </div>
 
@@ -787,6 +788,18 @@
     let activeLeadName = urlParams.get('leadname') || urlParams.get('name') || urlParams.get('fullname');
     let activeCompany = urlParams.get('company') || urlParams.get('companyname');
     let activeEmail = urlParams.get('email') || urlParams.get('emailaddress1');
+    let activeUserId = (urlParams.get('userid') || '').replace(/[{}]/g, '').trim();
+    let activeUserName = urlParams.get('username') || '';
+
+    try {
+      if (window.parent && window.parent.Xrm && window.parent.Xrm.Utility && window.parent.Xrm.Utility.getGlobalContext) {
+        const gc = window.parent.Xrm.Utility.getGlobalContext();
+        if (gc && gc.userSettings) {
+          if (gc.userSettings.userId) activeUserId = String(gc.userSettings.userId).replace(/[{}]/g, '').trim();
+          if (gc.userSettings.userName) activeUserName = gc.userSettings.userName;
+        }
+      }
+    } catch (e) { }
 
     try {
       if (window.parent && window.parent.Xrm && window.parent.Xrm.Page && window.parent.Xrm.Page.data) {
@@ -958,6 +971,8 @@
             currentLeadName: activeLeadName,
             currentLeadCompany: activeCompany,
             currentLeadEmail: activeEmail,
+            callerUserId: activeUserId,
+            callerUserName: activeUserName,
             timezone: userTimezone
           })
         });

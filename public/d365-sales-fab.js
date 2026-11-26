@@ -261,6 +261,22 @@ SalesAIAgent.getLeadContext = function () {
   var leadId = "";
   var leadName = "";
   var company = "";
+  var userId = "";
+  var userName = "";
+
+  try {
+    if (xrm && xrm.Utility && xrm.Utility.getGlobalContext) {
+      var globalCtx = xrm.Utility.getGlobalContext();
+      if (globalCtx && globalCtx.userSettings) {
+        if (globalCtx.userSettings.userId) {
+          userId = String(globalCtx.userSettings.userId).replace(/[{}]/g, "");
+        }
+        if (globalCtx.userSettings.userName) {
+          userName = globalCtx.userSettings.userName;
+        }
+      }
+    }
+  } catch (eUser) { }
 
   try {
     var fc = SalesAIAgent.currentFormContext ||
@@ -289,21 +305,25 @@ SalesAIAgent.getLeadContext = function () {
     console.warn("Could not extract lead context:", ex);
   }
 
-  return { leadId: leadId, leadName: leadName, company: company };
+  return { leadId: leadId, leadName: leadName, company: company, userId: userId, userName: userName };
 };
 
 /**
- * Build target URL with active Lead query params
+ * Build target URL with active Lead & User query params
  */
 SalesAIAgent.getTargetUrl = function () {
   var ctx = SalesAIAgent.getLeadContext();
-  var targetUrl = SalesAIAgent.WIDGET_URL;
+  var params = [];
   if (ctx.leadId) {
-    targetUrl += "?id=" + encodeURIComponent(ctx.leadId) +
-      "&leadname=" + encodeURIComponent(ctx.leadName || "") +
-      "&company=" + encodeURIComponent(ctx.company || "");
+    params.push("id=" + encodeURIComponent(ctx.leadId));
+    params.push("leadname=" + encodeURIComponent(ctx.leadName || ""));
+    params.push("company=" + encodeURIComponent(ctx.company || ""));
   }
-  return targetUrl;
+  if (ctx.userId) {
+    params.push("userid=" + encodeURIComponent(ctx.userId));
+    if (ctx.userName) params.push("username=" + encodeURIComponent(ctx.userName));
+  }
+  return SalesAIAgent.WIDGET_URL + (params.length ? "?" + params.join("&") : "");
 };
 
 /**

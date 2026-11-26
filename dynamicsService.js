@@ -1,8 +1,19 @@
 const msal = require('@azure/msal-node');
 const https = require('https');
 const axios = require('axios');
+const { AsyncLocalStorage } = require('async_hooks');
 axios.defaults.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
 require('dotenv').config();
+
+const callerUserStorage = new AsyncLocalStorage();
+axios.interceptors.request.use((config) => {
+  const callerId = callerUserStorage.getStore();
+  if (callerId && config.url && config.url.includes('/api/data/v9.2/')) {
+    config.headers = config.headers || {};
+    config.headers['MSCRMCallerID'] = callerId;
+  }
+  return config;
+});
 
 // Store recent leads in memory for dashboard preview
 const capturedLeadsHistory = [];
@@ -35,6 +46,18 @@ class DynamicsService {
     } else {
       console.log('⚠️ Dynamics 365 credentials not fully configured yet. Running in SIMULATION MODE.');
     }
+  }
+
+  runWithUser(userId, fn) {
+    const cleanId = userId ? String(userId).replace(/[{}]/g, '').trim() : '';
+    if (cleanId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId)) {
+      return callerUserStorage.run(cleanId, fn);
+    }
+    return fn();
+  }
+
+  getCallerUserId() {
+    return callerUserStorage.getStore() || null;
   }
 
   /**
@@ -645,7 +668,7 @@ class DynamicsService {
       appointmentRecord['regardingobjectid_lead@odata.bind'] = `/leads(${cleanLeadId})`;
     }
 
-    const apptOwnerId = String(process.env.DYNAMICS_DEFAULT_USER_ID || '3a5c5ea2-c48d-f111-8077-e4fb1efed92c').replace(/[{}]/g, '');
+    const apptOwnerId = String(this.getCallerUserId() || process.env.DYNAMICS_DEFAULT_USER_ID || '3a5c5ea2-c48d-f111-8077-e4fb1efed92c').replace(/[{}]/g, '');
     if (apptOwnerId) {
       appointmentRecord['ownerid@odata.bind'] = `/systemusers(${apptOwnerId})`;
     }
@@ -731,7 +754,7 @@ class DynamicsService {
       taskRecord['regardingobjectid_lead@odata.bind'] = `/leads(${cleanId})`;
     }
 
-    const targetOwnerId = String(ownerUserId || process.env.DYNAMICS_DEFAULT_USER_ID || '3a5c5ea2-c48d-f111-8077-e4fb1efed92c').replace(/[{}]/g, '');
+    const targetOwnerId = String(ownerUserId || this.getCallerUserId() || process.env.DYNAMICS_DEFAULT_USER_ID || '3a5c5ea2-c48d-f111-8077-e4fb1efed92c').replace(/[{}]/g, '');
     if (targetOwnerId) {
       taskRecord['ownerid@odata.bind'] = `/systemusers(${targetOwnerId})`;
     }
